@@ -582,13 +582,13 @@ func (g *Game) PlayExplosion() {
 
 // MapData represents the YAML structure for the tile map
 type MapData struct {
-	EndzoneTile     int     `yaml:"endzone_tile"`
-	FirstWallTile   int     `yaml:"first_wall_tile"`
-	WallTileCnt     int     `yaml:"wall_tile_cnt"`
-	FirstAccentTile int     `yaml:"first_accent_tile"`
-	AccentTileCnt   int     `yaml:"accent_tile_cnt"`
-	AccentPct       int     `yaml:"accent_pct"`
-	Tiles           [][]int `yaml:"tiles"`
+	EndzoneTile     int    `yaml:"endzone_tile"`
+	FirstWallTile   int    `yaml:"first_wall_tile"`
+	WallTileCnt     int    `yaml:"wall_tile_cnt"`
+	FirstAccentTile int    `yaml:"first_accent_tile"`
+	AccentTileCnt   int    `yaml:"accent_tile_cnt"`
+	AccentPct       int    `yaml:"accent_pct"`
+	Tiles           string `yaml:"tiles"`
 }
 
 // LoadTileMap loads tile positions from map.yaml and converts values to sprite numbers
@@ -611,10 +611,12 @@ func (g *Game) LoadTileMap(filename string) error {
 	g.AccentTileCnt = mapData.AccentTileCnt
 	g.AccentPct = mapData.AccentPct
 
-	g.TileMap = make([][]int, len(mapData.Tiles))
-	for rowIdx, srcRow := range mapData.Tiles {
-		g.TileMap[rowIdx] = make([]int, len(srcRow))
-		for colIdx, val := range srcRow {
+	rows := strings.Split(strings.TrimSpace(mapData.Tiles), "\n")
+	g.TileMap = make([][]int, len(rows))
+	for rowIdx, line := range rows {
+		g.TileMap[rowIdx] = make([]int, len(line))
+		for colIdx, ch := range line {
+			val := int(ch - '0')
 			switch val {
 			case 1:
 				// Wall tile: random sprite from first_wall_tile to first_wall_tile + wall_tile_cnt - 1
