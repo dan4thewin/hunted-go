@@ -996,9 +996,10 @@ func (g *Game) Crunch(p *GameObject) bool {
 	}
 	g.Reap(p)
 	if g.Playing && p.Speed > 0 {
-		if p.Kind == Thug {
+		switch p.Kind {
+		case Thug:
 			g.Score += int(p.Speed * 200)
-		} else if p.Kind == Waif {
+		case Waif:
 			g.Score -= int(p.Speed * 200)
 		}
 	}
@@ -1018,7 +1019,8 @@ func (g *Game) Crunch(p *GameObject) bool {
 
 // Reap removes an object from the game
 func (g *Game) Reap(p *GameObject) {
-	if p.Kind == Player {
+	switch p.Kind {
+	case Player:
 		if p.IsInvuln {
 			return
 		}
@@ -1029,9 +1031,9 @@ func (g *Game) Reap(p *GameObject) {
 		}
 		p.Speed = 0
 		g.Playing = false
-	} else if p.Kind == Waif {
+	case Waif:
 		g.WaifCount--
-	} else if p.Kind == Thug {
+	case Thug:
 		g.ThugCount--
 		g.Threat -= p.Threat
 	}
@@ -1191,26 +1193,30 @@ func (g *Game) Walk(p *GameObject, dir int) bool {
 		lr := dir & (DirLeft | DirRight)
 		ud := dir & (DirUp | DirDown)
 		if !p.Diag {
-			if lr == DirLeft {
+			switch lr {
+			case DirLeft:
 				lr = DirRight
-			} else if lr == DirRight {
+			case DirRight:
 				lr = DirLeft
 			}
-			if ud == DirUp {
+			switch ud {
+			case DirUp:
 				ud = DirDown
-			} else if ud == DirDown {
+			case DirDown:
 				ud = DirUp
 			}
 		} else if g.Obstacle(p, 0, 0, &lx, &ny) {
-			if ud == DirUp {
+			switch ud {
+			case DirUp:
 				ud = DirDown
-			} else if ud == DirDown {
+			case DirDown:
 				ud = DirUp
 			}
 		} else if g.Obstacle(p, 0, 0, &nx, &ly) {
-			if lr == DirLeft {
+			switch lr {
+			case DirLeft:
 				lr = DirRight
-			} else if lr == DirRight {
+			case DirRight:
 				lr = DirLeft
 			}
 		}
@@ -1288,9 +1294,10 @@ func (g *Game) Act(p *GameObject) bool {
 		}
 		p.Speed = max(base, p.Speed-0.05)
 
-		if dir&(DirLeft|DirRight) == DirLeft {
+		switch dir & (DirLeft | DirRight) {
+		case DirLeft:
 			p.Flip = true
-		} else if dir&(DirLeft|DirRight) == DirRight {
+		case DirRight:
 			p.Flip = false
 		}
 
@@ -2822,9 +2829,10 @@ func (g *Game) DrawTargetLine(obj *GameObject) {
 	}
 	if obj.Target != nil {
 		color := Pico8Colors[12] // blue default
-		if obj.Target.Kind == Player {
+		switch obj.Target.Kind {
+		case Player:
 			color = Pico8Colors[8] // red for player
-		} else if obj.Target.Kind == Waif {
+		case Waif:
 			color = Pico8Colors[14] // pink for waif
 		}
 		rl.DrawLine(ox, oy, int32(obj.Target.X), int32(obj.Target.Y), color)
