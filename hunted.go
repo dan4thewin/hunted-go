@@ -48,6 +48,18 @@ const (
 
 const ThreatMaxStart = 1.375
 
+// Kind identifies an object's type as a bit flag
+type Kind uint8
+
+const (
+	Player Kind = 1 << iota
+	Waif
+	Thug
+	Crate
+	Heart
+	Friendly = Player | Waif
+)
+
 // Game states
 type GameState int
 
@@ -78,12 +90,7 @@ type SpriteDef struct {
 	Bounce       bool
 	Final        *SpriteDef
 	Linger       bool
-	Crate        bool
-	Heart        bool
-	Thug         bool
-	Player       bool
-	Friendly     bool
-	Waif         bool
+	Kind         Kind
 	YMin         int
 	YMax         int
 	XMaxLimit    int
@@ -147,12 +154,7 @@ type GameObject struct {
 	Bounce    bool
 	Final     *SpriteDef
 	Linger    bool
-	Crate     bool
-	Heart     bool
-	Thug      bool
-	Player    bool
-	Friendly  bool
-	Waif      bool
+	Kind      Kind
 	Threat    float64
 	YMin      int
 	YMax      int
@@ -300,17 +302,17 @@ var (
 	DefMine     = &SpriteDef{Name: "mine", Idle: []int{1, 2}, IdleFrames: 30, Ignore: true, XOff: 2, Width: 3, YOff: 2, Height: 4, Final: DefEmpty}
 	DefLiveBomb = &SpriteDef{Name: "livebomb", Idle: []int{236}, IdleFrames: 6, Speed: 1.5, Poses: []int{236}, Frames: 14, XOff: 3, Width: 2, YOff: 3, Height: 2, Decay: true, Final: DefBoom, Bounce: true}
 	DefBomb     = &SpriteDef{Name: "bomb", Idle: []int{236}, IdleFrames: 6, Speed: 1.5, Poses: []int{236}, Frames: 6, XOff: 3, Width: 2, YOff: 3, Height: 2, Decay: true, Final: DefLiveBomb, Ignore: true, Bounce: true}
-	DefCrate    = &SpriteDef{Name: "crate", Idle: []int{169}, IdleFrames: -1, Avoid: true, XOff: 1, Width: 7, YOff: 1, Height: 7, Final: DefEmpty, Crate: true}
-	DefHeart    = &SpriteDef{Name: "heart", Idle: []int{170}, IdleFrames: -1, Avoid: true, Width: 7, YOff: 1, Height: 7, Final: DefEmpty, Heart: true}
+	DefCrate    = &SpriteDef{Name: "crate", Idle: []int{169}, IdleFrames: -1, Avoid: true, XOff: 1, Width: 7, YOff: 1, Height: 7, Final: DefEmpty, Kind: Crate}
+	DefHeart    = &SpriteDef{Name: "heart", Idle: []int{170}, IdleFrames: -1, Avoid: true, Width: 7, YOff: 1, Height: 7, Final: DefEmpty, Kind: Heart}
 	DefCorpse   = &SpriteDef{Name: "corpse", Idle: []int{27}, IdleFrames: -1, Ignore: true}
 	DefPlayer   = &SpriteDef{
 		Name: "player", Idle: []int{16, -16}, IdleFrames: 90, Width: 4, XOff: 2, Height: 5, YOff: 3,
 		YMin: TopEdge, YMax: BottomEdge - 8, Speed: 0.25, Poses: []int{17, 18, 19, 20, 21, 22}, Frames: 4,
-		Speed2: 1.375, Poses2: []int{23, 24, 25, 26}, Frames2: 2, Final: DefCorpse, Player: true, Friendly: true, InvulnFrames: 120,
+		Speed2: 1.375, Poses2: []int{23, 24, 25, 26}, Frames2: 2, Final: DefCorpse, Kind: Player, InvulnFrames: 120,
 	}
 	DefWaif = &SpriteDef{
 		Name: "waif", Idle: []int{16}, IdleFrames: -1, Width: 1, XOff: 4, Height: 4, YOff: 2,
-		Speed: 0.25, Poses: []int{17, 18, 19, 20, 21, 22}, Frames: 4, Final: DefCorpse, Friendly: true, Waif: true,
+		Speed: 0.25, Poses: []int{17, 18, 19, 20, 21, 22}, Frames: 4, Final: DefCorpse, Kind: Waif,
 	}
 
 	// Dead thug sprites
@@ -330,24 +332,24 @@ var (
 
 	// Thug definitions
 	Thugs = []*SpriteDef{
-		{Name: "mech", Speed: 0.1, Idle: []int{28}, Poses: []int{28, 30}, Frames: 12, Final: DefJunk, XOff: 2, Width: 12, YOff: 3, Height: 13, Thug: true},
-		{Name: "pinkie", Speed: 0.25, Idle: []int{32}, Poses: []int{33, 34}, Frames: 12, Final: DefJunk, XOff: 2, Width: 4, Thug: true},
-		{Name: "chomper", Speed: 0.25, Idle: []int{35, 36, 37}, IdleFrames: 12, Poses: []int{51, 52, 53, 67, 68, 69}, Frames: 6, Final: DefDeadChomper, Thug: true},
-		{Name: "icedevil", Speed: 0.3, Idle: []int{38, 39, 40}, IdleFrames: 12, Poses: []int{54, 55, 56, 70, 71, 72}, Frames: 6, Final: DefDeadIcedevil, Thug: true},
-		{Name: "zoid", Speed: 0.125, Idle: []int{48}, Poses: []int{49, 50}, Frames: 12, Final: DefJunk, Thug: true},
-		{Name: "jazzy", Speed: 0.25, Idle: []int{64}, Poses: []int{65, 66}, Frames: 12, Final: DefJunk, Thug: true},
-		{Name: "stretch", Speed: 0.3, Idle: []int{80}, Poses: []int{81, 82, 96, 97, 98, 112, 113, 114, 80}, Frames: 6, Final: DefJunk, Thug: true},
-		{Name: "crabby", Speed: 0.25, Idle: []int{99, 100, 101}, IdleFrames: 12, Poses: []int{115, 116, 117}, Frames: 6, YOff: 3, Height: 5, Final: DefDeadCrabby, Thug: true},
-		{Name: "sluggy", Speed: 0.05, Idle: []int{102, 103, 104}, IdleFrames: 12, Poses: []int{118, 119, 120}, Frames: 6, XOff: 3, Width: 3, YOff: 5, Height: 3, Final: DefDeadSluggy, Thug: true},
-		{Name: "froggy", Speed: 0.25, Idle: []int{128, 129, 130}, IdleFrames: 12, Poses: []int{144, 145, 146}, Frames: 6, XOff: 2, Width: 4, YOff: 5, Height: 3, Final: DefDeadFroggy, Thug: true},
-		{Name: "batty", Speed: 0.3, Idle: []int{150, 151, 152}, IdleFrames: 12, Poses: []int{150, 151, 152}, Frames: 6, Final: DefDeadBatty, Thug: true},
-		{Name: "thingy", Speed: 0.15, Idle: []int{163, 164, 165}, IdleFrames: 12, Poses: []int{179, 180, 181, 195, 196, 197}, Frames: 6, Final: DefDeadThingy, Thug: true},
-		{Name: "bluedevil", Speed: 0.3, Idle: []int{176, 177, 178}, IdleFrames: 12, Poses: []int{192, 192, 194, 208, 209, 210}, Frames: 6, Final: DefDeadBluedevil, Thug: true},
-		{Name: "copter", Speed: 0.325, Idle: []int{182, 183, 184}, IdleFrames: 6, Poses: []int{182, 183, 184}, Frames: 6, Final: DefDeadCopter, Thug: true},
-		{Name: "tripod", Speed: 0.3, Idle: []int{214, 215, 216}, IdleFrames: 6, Poses: []int{230, 231, 232}, Frames: 6, Final: DefDeadTripod, Thug: true},
-		{Name: "drone", Speed: 0.3, Idle: []int{227, 228, 229}, IdleFrames: 6, Poses: []int{227, 228, 229}, Frames: 6, Final: DefDeadDrone, Thug: true},
-		{Name: "cyclops", Speed: 0.25, Idle: []int{42, -42}, IdleFrames: 18, Poses: []int{41, 42, 43, 42}, Frames: 6, XOff: 2, Width: 3, Final: DefDeadCyclops, Thug: true},
-		{Name: "wabbit", Speed: 0.25, Idle: []int{90, -90}, IdleFrames: 12, Poses: []int{89, 90, 91, 90}, Frames: 6, XOff: 2, Width: 4, Final: DefDeadWabbit, Thug: true},
+		{Name: "mech", Speed: 0.1, Idle: []int{28}, Poses: []int{28, 30}, Frames: 12, Final: DefJunk, XOff: 2, Width: 12, YOff: 3, Height: 13, Kind: Thug},
+		{Name: "pinkie", Speed: 0.25, Idle: []int{32}, Poses: []int{33, 34}, Frames: 12, Final: DefJunk, XOff: 2, Width: 4, Kind: Thug},
+		{Name: "chomper", Speed: 0.25, Idle: []int{35, 36, 37}, IdleFrames: 12, Poses: []int{51, 52, 53, 67, 68, 69}, Frames: 6, Final: DefDeadChomper, Kind: Thug},
+		{Name: "icedevil", Speed: 0.3, Idle: []int{38, 39, 40}, IdleFrames: 12, Poses: []int{54, 55, 56, 70, 71, 72}, Frames: 6, Final: DefDeadIcedevil, Kind: Thug},
+		{Name: "zoid", Speed: 0.125, Idle: []int{48}, Poses: []int{49, 50}, Frames: 12, Final: DefJunk, Kind: Thug},
+		{Name: "jazzy", Speed: 0.25, Idle: []int{64}, Poses: []int{65, 66}, Frames: 12, Final: DefJunk, Kind: Thug},
+		{Name: "stretch", Speed: 0.3, Idle: []int{80}, Poses: []int{81, 82, 96, 97, 98, 112, 113, 114, 80}, Frames: 6, Final: DefJunk, Kind: Thug},
+		{Name: "crabby", Speed: 0.25, Idle: []int{99, 100, 101}, IdleFrames: 12, Poses: []int{115, 116, 117}, Frames: 6, YOff: 3, Height: 5, Final: DefDeadCrabby, Kind: Thug},
+		{Name: "sluggy", Speed: 0.05, Idle: []int{102, 103, 104}, IdleFrames: 12, Poses: []int{118, 119, 120}, Frames: 6, XOff: 3, Width: 3, YOff: 5, Height: 3, Final: DefDeadSluggy, Kind: Thug},
+		{Name: "froggy", Speed: 0.25, Idle: []int{128, 129, 130}, IdleFrames: 12, Poses: []int{144, 145, 146}, Frames: 6, XOff: 2, Width: 4, YOff: 5, Height: 3, Final: DefDeadFroggy, Kind: Thug},
+		{Name: "batty", Speed: 0.3, Idle: []int{150, 151, 152}, IdleFrames: 12, Poses: []int{150, 151, 152}, Frames: 6, Final: DefDeadBatty, Kind: Thug},
+		{Name: "thingy", Speed: 0.15, Idle: []int{163, 164, 165}, IdleFrames: 12, Poses: []int{179, 180, 181, 195, 196, 197}, Frames: 6, Final: DefDeadThingy, Kind: Thug},
+		{Name: "bluedevil", Speed: 0.3, Idle: []int{176, 177, 178}, IdleFrames: 12, Poses: []int{192, 192, 194, 208, 209, 210}, Frames: 6, Final: DefDeadBluedevil, Kind: Thug},
+		{Name: "copter", Speed: 0.325, Idle: []int{182, 183, 184}, IdleFrames: 6, Poses: []int{182, 183, 184}, Frames: 6, Final: DefDeadCopter, Kind: Thug},
+		{Name: "tripod", Speed: 0.3, Idle: []int{214, 215, 216}, IdleFrames: 6, Poses: []int{230, 231, 232}, Frames: 6, Final: DefDeadTripod, Kind: Thug},
+		{Name: "drone", Speed: 0.3, Idle: []int{227, 228, 229}, IdleFrames: 6, Poses: []int{227, 228, 229}, Frames: 6, Final: DefDeadDrone, Kind: Thug},
+		{Name: "cyclops", Speed: 0.25, Idle: []int{42, -42}, IdleFrames: 18, Poses: []int{41, 42, 43, 42}, Frames: 6, XOff: 2, Width: 3, Final: DefDeadCyclops, Kind: Thug},
+		{Name: "wabbit", Speed: 0.25, Idle: []int{90, -90}, IdleFrames: 12, Poses: []int{89, 90, 91, 90}, Frames: 6, XOff: 2, Width: 4, Final: DefDeadWabbit, Kind: Thug},
 	}
 )
 
@@ -690,12 +692,7 @@ func (g *Game) Emplace(def *SpriteDef, x, y float64, opts ...func(*GameObject)) 
 		Bounce:       def.Bounce,
 		Final:        def.Final,
 		Linger:       def.Linger,
-		Crate:        def.Crate,
-		Heart:        def.Heart,
-		Thug:         def.Thug,
-		Player:       def.Player,
-		Friendly:     def.Friendly,
-		Waif:         def.Waif,
+		Kind:         def.Kind,
 		YMin:         def.YMin,
 		YMax:         def.YMax,
 		XMaxLimit:    def.XMaxLimit,
@@ -999,13 +996,13 @@ func (g *Game) Crunch(p *GameObject) bool {
 	}
 	g.Reap(p)
 	if g.Playing && p.Speed > 0 {
-		if p.Thug {
+		if p.Kind == Thug {
 			g.Score += int(p.Speed * 200)
-		} else if p.Waif {
+		} else if p.Kind == Waif {
 			g.Score -= int(p.Speed * 200)
 		}
 	}
-	if (p.Thug && p.Y >= TopEdge && p.Y <= BottomEdge) || (p.Player && g.HeartCount == 0) || p.Waif {
+	if (p.Kind == Thug && p.Y >= TopEdge && p.Y <= BottomEdge) || (p.Kind == Player && g.HeartCount == 0) || p.Kind == Waif {
 		g.Emplace(p.Final, p.X, p.Y, func(obj *GameObject) {
 			obj.PalIndex = p.PalIndex
 			obj.PalSwap = p.PalSwap
@@ -1021,7 +1018,7 @@ func (g *Game) Crunch(p *GameObject) bool {
 
 // Reap removes an object from the game
 func (g *Game) Reap(p *GameObject) {
-	if p.Player {
+	if p.Kind == Player {
 		if p.IsInvuln {
 			return
 		}
@@ -1032,9 +1029,9 @@ func (g *Game) Reap(p *GameObject) {
 		}
 		p.Speed = 0
 		g.Playing = false
-	} else if p.Friendly {
+	} else if p.Kind == Waif {
 		g.WaifCount--
-	} else if p.Thug {
+	} else if p.Kind == Thug {
 		g.ThugCount--
 		g.Threat -= p.Threat
 	}
@@ -1131,10 +1128,10 @@ func (g *Game) MobCollide(p *GameObject, x, y float64) *GameObject {
 	if q == nil {
 		return nil
 	}
-	if q.Crate && p.Friendly {
+	if q.Kind == Crate && p.Kind&Friendly != 0 {
 		g.OpenCrate(q)
-	} else if p.Friendly && q.Friendly {
-		if !p.Player {
+	} else if p.Kind&Friendly != 0 && q.Kind&Friendly != 0 {
+		if p.Kind != Player {
 			return q
 		}
 		return nil
@@ -1286,7 +1283,7 @@ func (g *Game) Act(p *GameObject) bool {
 		p.Speed = max(0, p.Speed-0.05)
 	} else {
 		base := p.BaseSpeed
-		if p.Thug && g.Mode == 2 {
+		if p.Kind == Thug && g.Mode == 2 {
 			base *= 0.5
 		}
 		p.Speed = max(base, p.Speed-0.05)
@@ -1425,7 +1422,7 @@ func (g *Game) Retarget(p *GameObject) *GameObject {
 		if p == q {
 			continue
 		}
-		if (q.Friendly && q.X < FinishLine) || (q.Thug && !g.Playing) {
+		if (q.Kind&Friendly != 0 && q.X < FinishLine) || (q.Kind == Thug && !g.Playing) {
 			d := Distance(p, q)
 			if d < minDist {
 				target = q
@@ -1448,7 +1445,7 @@ func Follow(g *Game, p *GameObject) int {
 		tc = nil
 		t = g.Retarget(p)
 		p.Target = t
-		if t != nil && t.Waif && !t.Spotted {
+		if t != nil && t.Kind == Waif && !t.Spotted {
 			g.PlaySfx(g.SndSpotted, "spotted")
 			t.Spotted = true
 		}
@@ -1674,7 +1671,7 @@ func (g *Game) Spawn(def *SpriteDef, x, y float64, factor float64) bool {
 		obj.BaseSpeed = s
 		obj.Threat = t
 		obj.XMaxLimit = FinishLine - obj.Width - obj.XOff
-		obj.Thug = true
+		obj.Kind = Thug
 		obj.Controller = Follow
 	})
 
@@ -2310,7 +2307,7 @@ func (g *Game) StepSimulation() {
 		px := g.Player.X
 		for i := len(g.Objects) - 1; i >= 0; i-- {
 			obj := g.Objects[i]
-			if obj.Thug && px-obj.X > 120 {
+			if obj.Kind == Thug && px-obj.X > 120 {
 				g.ThugCount--
 				g.Threat -= obj.Threat
 				g.Objects = slices.Delete(g.Objects, i, i+1)
@@ -2816,7 +2813,7 @@ func (g *Game) DrawDirection(obj *GameObject) {
 // DrawTargetLine draws a line from thug to its target (debug&2)
 // Crumb target: light grey, player target: red, waif target: pink
 func (g *Game) DrawTargetLine(obj *GameObject) {
-	if !obj.Thug {
+	if obj.Kind != Thug {
 		return
 	}
 	ox, oy := int32(obj.X), int32(obj.Y)
@@ -2825,9 +2822,9 @@ func (g *Game) DrawTargetLine(obj *GameObject) {
 	}
 	if obj.Target != nil {
 		color := Pico8Colors[12] // blue default
-		if obj.Target.Player {
+		if obj.Target.Kind == Player {
 			color = Pico8Colors[8] // red for player
-		} else if obj.Target.Waif {
+		} else if obj.Target.Kind == Waif {
 			color = Pico8Colors[14] // pink for waif
 		}
 		rl.DrawLine(ox, oy, int32(obj.Target.X), int32(obj.Target.Y), color)
