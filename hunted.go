@@ -90,6 +90,43 @@ type SpriteDef struct {
 	InvulnFrames int
 }
 
+// Anim holds animation state for a game object
+type Anim struct {
+	Idle          []int
+	IdleFrames    int
+	Poses         []int
+	Frames        int
+	Poses2        []int
+	Frames2       int
+	Speed2        float64
+	CurrentPoses  []int
+	CurrentFrames int
+	PoseIndex     int
+	FrameCount    int
+	CurrentSprite int
+	IsIdle        bool
+	IsDash        bool
+	FrameFunc     func(*GameObject) // called on animation frame reset, like Lua's framesfn
+}
+
+// AI holds pathfinding and targeting state for a game object
+type AI struct {
+	Target      *GameObject
+	TargetCrumb *Crumb
+	JitterX     float64
+	JitterY     float64
+	JitterTime  int
+	PathC       int
+	PathR       int
+	Dot         int
+	Delay       int
+	Spotted     bool // waif: spotted sound has played
+	Scored      bool
+	Controller  func(*Game, *GameObject) int
+	PostMove    func(*Game, *GameObject)
+	PreAct      func(*Game, *GameObject) bool
+}
+
 // Game object
 type GameObject struct {
 	ID        int
@@ -117,31 +154,11 @@ type GameObject struct {
 	Friendly  bool
 	Waif      bool
 	Threat    float64
-	Scored    bool
 	YMin      int
 	YMax      int
 	XMaxLimit int
 	Diag      bool
 	Armed     bool
-	Dot       int
-
-	// Animation state
-	Idle       []int
-	IdleFrames int
-	Poses      []int
-	Frames     int
-	Poses2     []int
-	Frames2    int
-	Speed2     float64
-
-	// Current animation
-	CurrentPoses  []int
-	CurrentFrames int
-	PoseIndex     int
-	FrameCount    int
-	CurrentSprite int
-	IsIdle        bool
-	IsDash        bool
 
 	// Invulnerability
 	InvulnFrames int
@@ -149,22 +166,9 @@ type GameObject struct {
 	IsInvuln     bool
 	PalIndex     int  // for waif recoloring
 	PalSwap      bool // draw with palette swap shader
-	Spotted      bool // waif: spotted sound has played
 
-	// Pathfinding
-	Target       *GameObject
-	TargetCrumb  *Crumb
-	JitterX      float64
-	JitterY      float64
-	JitterTime   int
-	PathC, PathR int
-	Delay        int
-
-	// Controller function
-	Controller func(*Game, *GameObject) int
-	PostMove   func(*Game, *GameObject)
-	PreAct     func(*Game, *GameObject) bool
-	FrameFunc  func(*GameObject) // called on animation frame reset, like Lua's framesfn
+	Anim // animation state
+	AI   // pathfinding, targeting, and control
 }
 
 // Breadcrumb for pathfinding
@@ -187,6 +191,61 @@ type Ping struct {
 	X, Y   float64
 	Radius float64
 	Color  rl.Color
+}
+
+// Audio holds music and sound effect state
+type Audio struct {
+	Songs        []string
+	SongIndex    int
+	Music        rl.Music
+	MusicPlaying bool
+	MusicVolume  float32
+	SndExplosion [3]rl.Sound
+	SndCrunch    rl.Sound
+	SndPopulate  rl.Sound
+	SndSafe      rl.Sound
+	SndSpawn     rl.Sound
+	SndSpawnWaif rl.Sound
+	SndThrow     rl.Sound
+	SndSpotted   rl.Sound
+	SoundsLoaded bool
+	SfxVolume    float32 // 0.0 to 1.0
+	SfxEnabled   bool    // toggle sound effects on/off
+}
+
+// Render holds graphics resources and display state
+type Render struct {
+	Spritesheet       rl.Texture2D
+	SpriteRects       []rl.Rectangle
+	InvulnShader      rl.Shader
+	BrightnessLoc     int32
+	PaletteSwapShader rl.Shader
+	PaletteIndexLoc   int32
+	Camera            rl.Camera2D
+	WindowSize        int32 // Square window dimension
+	Font              rl.Font
+}
+
+// TileConfig holds tile map data and parameters
+type TileConfig struct {
+	TileMap         [][]int
+	EndzoneTile     int
+	FirstWallTile   int
+	WallTileCnt     int
+	FirstAccentTile int
+	AccentTileCnt   int
+	AccentPct       int
+}
+
+// MenuState holds pause menu and overlay state
+type MenuState struct {
+	Paused         bool
+	MenuIndex      int        // options menu selected item
+	ShowHelp       bool       // help overlay visible
+	ShowCredits    bool       // credits overlay visible
+	FirstLaunch    bool       // show help on first game start
+	TitleMenuIndex int        // 0=start, 1=options, 2=credits, 3=quit
+	LastMousePos   rl.Vector2 // previous frame mouse position for detecting movement
 }
 
 // Game state
@@ -227,52 +286,10 @@ type Game struct {
 	// Pathfinding grid
 	Path [][]int
 
-	// Resources
-	Spritesheet       rl.Texture2D
-	TileMap           [][]int
-	SpriteRects       []rl.Rectangle
-	EndzoneTile       int
-	FirstWallTile     int
-	WallTileCnt       int
-	FirstAccentTile   int
-	AccentTileCnt     int
-	AccentPct         int
-	InvulnShader      rl.Shader
-	BrightnessLoc     int32
-	PaletteSwapShader rl.Shader
-	PaletteIndexLoc   int32
-	Camera            rl.Camera2D
-	WindowSize        int32 // Square window dimension
-	Font              rl.Font
-
-	// Music
-	Songs        []string
-	SongIndex    int
-	Music        rl.Music
-	MusicPlaying bool
-	MusicVolume  float32
-
-	// Menu state
-	Paused         bool
-	MenuIndex      int        // options menu selected item
-	ShowHelp       bool       // help overlay visible
-	ShowCredits    bool       // credits overlay visible
-	FirstLaunch    bool       // show help on first game start
-	TitleMenuIndex int        // 0=start, 1=options, 2=credits, 3=quit
-	LastMousePos   rl.Vector2 // previous frame mouse position for detecting movement
-
-	// Sound effects
-	SndExplosion [3]rl.Sound
-	SndCrunch    rl.Sound
-	SndPopulate  rl.Sound
-	SndSafe      rl.Sound
-	SndSpawn     rl.Sound
-	SndSpawnWaif rl.Sound
-	SndThrow     rl.Sound
-	SndSpotted   rl.Sound
-	SoundsLoaded bool
-	SfxVolume    float32 // 0.0 to 1.0
-	SfxEnabled   bool    // toggle sound effects on/off
+	Audio      // music and sound effects
+	Render     // graphics resources
+	TileConfig // tile map data
+	MenuState  // pause menu and overlays
 }
 
 // Sprite definitions
@@ -337,18 +354,17 @@ var (
 // NewGame creates a new game instance
 func NewGame() *Game {
 	g := &Game{
-		State:       StateTitle,
-		Mode:        1,
-		ThreatMax:   ThreatMaxStart,
-		Debug:       0,
-		HeartCount:  4,
-		BombCount:   3,
-		FirstLaunch: true,
-		SfxVolume:   1.0,
-		SfxEnabled:  true,
-		MineCount:   3,
-		CamY:        16,
-		Path:        make([][]int, 32),
+		State:      StateTitle,
+		Mode:       1,
+		ThreatMax:  ThreatMaxStart,
+		Debug:      0,
+		HeartCount: 4,
+		BombCount:  3,
+		MineCount:  3,
+		CamY:       16,
+		Path:       make([][]int, 32),
+		Audio:      Audio{SfxVolume: 1.0, SfxEnabled: true},
+		MenuState:  MenuState{FirstLaunch: true},
 	}
 	for i := range g.Path {
 		g.Path[i] = make([]int, 20)
@@ -685,13 +701,15 @@ func (g *Game) Emplace(def *SpriteDef, x, y float64, opts ...func(*GameObject)) 
 		XMaxLimit:    def.XMaxLimit,
 		LastDir:      DirRight,
 		InvulnFrames: def.InvulnFrames,
-		Idle:         def.Idle,
-		IdleFrames:   def.IdleFrames,
-		Poses:        def.Poses,
-		Frames:       def.Frames,
-		Poses2:       def.Poses2,
-		Frames2:      def.Frames2,
-		Speed2:       def.Speed2,
+		Anim: Anim{
+			Idle:       def.Idle,
+			IdleFrames: def.IdleFrames,
+			Poses:      def.Poses,
+			Frames:     def.Frames,
+			Poses2:     def.Poses2,
+			Frames2:    def.Frames2,
+			Speed2:     def.Speed2,
+		},
 	}
 
 	// Set defaults
