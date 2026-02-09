@@ -34,8 +34,6 @@ const (
 	BottomEdge   = 144 // 2 tiles from bottom
 	XMax         = 1023
 	YMax         = 159
-	BlackTile    = 9
-	RockTile     = 241
 )
 
 // Direction flags
@@ -45,8 +43,6 @@ const (
 	DirUp    = 4
 	DirDown  = 8
 )
-
-const ThreatMaxStart = 1.375
 
 // Kind identifies an object's type as a bit flag
 type Kind uint8
@@ -237,6 +233,8 @@ type TileConfig struct {
 	FirstAccentTile int
 	AccentTileCnt   int
 	AccentPct       int
+	BlackTile       int
+	RockTile        int
 }
 
 // MenuState holds pause menu and overlay state
@@ -288,77 +286,24 @@ type Game struct {
 	// Pathfinding grid
 	Path [][]int
 
+	// Configuration from config.yaml
+	Defs           map[string]*SpriteDef
+	Thugs          []*SpriteDef
+	ThreatMaxStart float64
+	Assets         AssetsConfig
+	SoundPaths     SoundsConfig
+
 	Audio      // music and sound effects
 	Render     // graphics resources
 	TileConfig // tile map data
 	MenuState  // pause menu and overlays
 }
 
-// Sprite definitions
-var (
-	DefEmpty    = &SpriteDef{Name: "empty", Idle: []int{9}, IdleFrames: 2, Ignore: true, Decay: true}
-	DefBoom     = &SpriteDef{Name: "boom", Idle: []int{199}, IdleFrames: 2, Decay: true}
-	DefJunk     = &SpriteDef{Name: "junk", Idle: []int{3, 4, 5, 6, 7}, IdleFrames: 2, Avoid: true, Decay: true, XOff: 2, Width: 4, YOff: 3, Height: 4}
-	DefMine     = &SpriteDef{Name: "mine", Idle: []int{1, 2}, IdleFrames: 30, Ignore: true, XOff: 2, Width: 3, YOff: 2, Height: 4, Final: DefEmpty}
-	DefLiveBomb = &SpriteDef{Name: "livebomb", Idle: []int{236}, IdleFrames: 6, Speed: 1.5, Poses: []int{236}, Frames: 14, XOff: 3, Width: 2, YOff: 3, Height: 2, Decay: true, Final: DefBoom, Bounce: true}
-	DefBomb     = &SpriteDef{Name: "bomb", Idle: []int{236}, IdleFrames: 6, Speed: 1.5, Poses: []int{236}, Frames: 6, XOff: 3, Width: 2, YOff: 3, Height: 2, Decay: true, Final: DefLiveBomb, Ignore: true, Bounce: true}
-	DefCrate    = &SpriteDef{Name: "crate", Idle: []int{169}, IdleFrames: -1, Avoid: true, XOff: 1, Width: 7, YOff: 1, Height: 7, Final: DefEmpty, Kind: Crate}
-	DefHeart    = &SpriteDef{Name: "heart", Idle: []int{170}, IdleFrames: -1, Avoid: true, Width: 7, YOff: 1, Height: 7, Final: DefEmpty, Kind: Heart}
-	DefCorpse   = &SpriteDef{Name: "corpse", Idle: []int{27}, IdleFrames: -1, Ignore: true}
-	DefPlayer   = &SpriteDef{
-		Name: "player", Idle: []int{16, -16}, IdleFrames: 90, Width: 4, XOff: 2, Height: 5, YOff: 3,
-		YMin: TopEdge, YMax: BottomEdge - 8, Speed: 0.25, Poses: []int{17, 18, 19, 20, 21, 22}, Frames: 4,
-		Speed2: 1.375, Poses2: []int{23, 24, 25, 26}, Frames2: 2, Final: DefCorpse, Kind: Player, InvulnFrames: 120,
-	}
-	DefWaif = &SpriteDef{
-		Name: "waif", Idle: []int{16}, IdleFrames: -1, Width: 1, XOff: 4, Height: 4, YOff: 2,
-		Speed: 0.25, Poses: []int{17, 18, 19, 20, 21, 22}, Frames: 4, Final: DefCorpse, Kind: Waif,
-	}
-
-	// Dead thug sprites
-	DefDeadChomper   = &SpriteDef{Name: "chX", Idle: []int{83, 84, 85}, IdleFrames: 16, Ignore: true, Decay: true, Linger: true}
-	DefDeadIcedevil  = &SpriteDef{Name: "icX", Idle: []int{86, 87, 88}, IdleFrames: 16, Ignore: true, Decay: true, Linger: true}
-	DefDeadCrabby    = &SpriteDef{Name: "crX", Idle: []int{147, 148, 149}, IdleFrames: 16, Ignore: true, Decay: true, Linger: true}
-	DefDeadSluggy    = &SpriteDef{Name: "slX", Idle: []int{134, 135, 136}, IdleFrames: 10, Ignore: true, Decay: true}
-	DefDeadFroggy    = &SpriteDef{Name: "frX", Idle: []int{160, 161, 162}, IdleFrames: 10, Ignore: true, Decay: true, Linger: true}
-	DefDeadBatty     = &SpriteDef{Name: "baX", Idle: []int{166, 167}, IdleFrames: 10, Ignore: true, Decay: true}
-	DefDeadThingy    = &SpriteDef{Name: "thX", Idle: []int{211, 212, 213}, IdleFrames: 16, Ignore: true, Decay: true, Linger: true}
-	DefDeadBluedevil = &SpriteDef{Name: "blX", Idle: []int{224, 225, 226}, IdleFrames: 16, Ignore: true, Decay: true, Linger: true}
-	DefDeadCopter    = &SpriteDef{Name: "coX", Idle: []int{198, 199, 200}, IdleFrames: 4, Ignore: true, Decay: true, Final: DefJunk}
-	DefDeadTripod    = &SpriteDef{Name: "trX", Idle: []int{233, 234, 235}, IdleFrames: 4, Ignore: true, Decay: true, Final: DefJunk}
-	DefDeadDrone     = &SpriteDef{Name: "drX", Idle: []int{243, 244, 245}, IdleFrames: 4, Ignore: true, Decay: true, Final: DefJunk}
-	DefDeadCyclops   = &SpriteDef{Name: "cyX", Idle: []int{57, 58, 59, 73, 74, 75}, IdleFrames: 12, Ignore: true, Decay: true, Final: DefJunk}
-	DefDeadWabbit    = &SpriteDef{Name: "waX", Idle: []int{105, 106, 107, 121, 122, 123}, IdleFrames: 12, Ignore: true, Decay: true, Final: DefJunk}
-
-	// Thug definitions
-	Thugs = []*SpriteDef{
-		{Name: "mech", Speed: 0.1, Idle: []int{28}, Poses: []int{28, 30}, Frames: 12, Final: DefJunk, XOff: 2, Width: 12, YOff: 3, Height: 13, Kind: Thug},
-		{Name: "pinkie", Speed: 0.25, Idle: []int{32}, Poses: []int{33, 34}, Frames: 12, Final: DefJunk, XOff: 2, Width: 4, Kind: Thug},
-		{Name: "chomper", Speed: 0.25, Idle: []int{35, 36, 37}, IdleFrames: 12, Poses: []int{51, 52, 53, 67, 68, 69}, Frames: 6, Final: DefDeadChomper, Kind: Thug},
-		{Name: "icedevil", Speed: 0.3, Idle: []int{38, 39, 40}, IdleFrames: 12, Poses: []int{54, 55, 56, 70, 71, 72}, Frames: 6, Final: DefDeadIcedevil, Kind: Thug},
-		{Name: "zoid", Speed: 0.125, Idle: []int{48}, Poses: []int{49, 50}, Frames: 12, Final: DefJunk, Kind: Thug},
-		{Name: "jazzy", Speed: 0.25, Idle: []int{64}, Poses: []int{65, 66}, Frames: 12, Final: DefJunk, Kind: Thug},
-		{Name: "stretch", Speed: 0.3, Idle: []int{80}, Poses: []int{81, 82, 96, 97, 98, 112, 113, 114, 80}, Frames: 6, Final: DefJunk, Kind: Thug},
-		{Name: "crabby", Speed: 0.25, Idle: []int{99, 100, 101}, IdleFrames: 12, Poses: []int{115, 116, 117}, Frames: 6, YOff: 3, Height: 5, Final: DefDeadCrabby, Kind: Thug},
-		{Name: "sluggy", Speed: 0.05, Idle: []int{102, 103, 104}, IdleFrames: 12, Poses: []int{118, 119, 120}, Frames: 6, XOff: 3, Width: 3, YOff: 5, Height: 3, Final: DefDeadSluggy, Kind: Thug},
-		{Name: "froggy", Speed: 0.25, Idle: []int{128, 129, 130}, IdleFrames: 12, Poses: []int{144, 145, 146}, Frames: 6, XOff: 2, Width: 4, YOff: 5, Height: 3, Final: DefDeadFroggy, Kind: Thug},
-		{Name: "batty", Speed: 0.3, Idle: []int{150, 151, 152}, IdleFrames: 12, Poses: []int{150, 151, 152}, Frames: 6, Final: DefDeadBatty, Kind: Thug},
-		{Name: "thingy", Speed: 0.15, Idle: []int{163, 164, 165}, IdleFrames: 12, Poses: []int{179, 180, 181, 195, 196, 197}, Frames: 6, Final: DefDeadThingy, Kind: Thug},
-		{Name: "bluedevil", Speed: 0.3, Idle: []int{176, 177, 178}, IdleFrames: 12, Poses: []int{192, 192, 194, 208, 209, 210}, Frames: 6, Final: DefDeadBluedevil, Kind: Thug},
-		{Name: "copter", Speed: 0.325, Idle: []int{182, 183, 184}, IdleFrames: 6, Poses: []int{182, 183, 184}, Frames: 6, Final: DefDeadCopter, Kind: Thug},
-		{Name: "tripod", Speed: 0.3, Idle: []int{214, 215, 216}, IdleFrames: 6, Poses: []int{230, 231, 232}, Frames: 6, Final: DefDeadTripod, Kind: Thug},
-		{Name: "drone", Speed: 0.3, Idle: []int{227, 228, 229}, IdleFrames: 6, Poses: []int{227, 228, 229}, Frames: 6, Final: DefDeadDrone, Kind: Thug},
-		{Name: "cyclops", Speed: 0.25, Idle: []int{42, -42}, IdleFrames: 18, Poses: []int{41, 42, 43, 42}, Frames: 6, XOff: 2, Width: 3, Final: DefDeadCyclops, Kind: Thug},
-		{Name: "wabbit", Speed: 0.25, Idle: []int{90, -90}, IdleFrames: 12, Poses: []int{89, 90, 91, 90}, Frames: 6, XOff: 2, Width: 4, Final: DefDeadWabbit, Kind: Thug},
-	}
-)
-
 // NewGame creates a new game instance
 func NewGame() *Game {
 	g := &Game{
 		State:      StateTitle,
 		Mode:       1,
-		ThreatMax:  ThreatMaxStart,
 		Debug:      0,
 		HeartCount: 4,
 		BombCount:  3,
@@ -418,12 +363,12 @@ func (g *Game) HandleResize() {
 	g.Camera.Offset = rl.Vector2{X: float32(g.WindowSize) / 2, Y: float32(g.WindowSize) / 2}
 }
 
-// LoadResources loads game resources
+// LoadResources loads game resources using paths from config
 func (g *Game) LoadResources() error {
 	// Load spritesheet
-	img := rl.LoadImage("hunted.png")
+	img := rl.LoadImage(g.Assets.Spritesheet)
 	if img.Data == nil {
-		return fmt.Errorf("failed to load hunted.png")
+		return fmt.Errorf("failed to load %s", g.Assets.Spritesheet)
 	}
 	g.Spritesheet = rl.LoadTextureFromImage(img)
 	rl.UnloadImage(img)
@@ -441,25 +386,16 @@ func (g *Game) LoadResources() error {
 		}
 	}
 
-	// Load tile map from map.yaml
-	if err := g.LoadTileMap("map.yaml"); err != nil {
-		// Create empty map if file doesn't exist
-		g.TileMap = make([][]int, YMax/TileSize+1)
-		for i := range g.TileMap {
-			g.TileMap[i] = make([]int, XMax/TileSize+1)
-		}
-	}
-
 	// Load invulnerability flash shader
-	g.InvulnShader = rl.LoadShader("", "invuln_flash.fs")
+	g.InvulnShader = rl.LoadShader("", g.Assets.InvulnShader)
 	g.BrightnessLoc = rl.GetShaderLocation(g.InvulnShader, "brightness")
 
 	// Load palette swap shader for waif recoloring
-	g.PaletteSwapShader = rl.LoadShader("", "palette_swap.fs")
+	g.PaletteSwapShader = rl.LoadShader("", g.Assets.PaletteShader)
 	g.PaletteIndexLoc = rl.GetShaderLocation(g.PaletteSwapShader, "paletteIndex")
 
 	// Load custom font at size 80 for crisp rendering
-	g.Font = rl.LoadFontEx("fonts/hw.otf", 80, nil)
+	g.Font = rl.LoadFontEx(g.Assets.Font, 80, nil)
 
 	return nil
 }
@@ -469,14 +405,14 @@ func (g *Game) InitMusic() {
 	rl.InitAudioDevice()
 	g.LoadSounds()
 
-	entries, err := os.ReadDir("music")
+	entries, err := os.ReadDir(g.Assets.MusicDir)
 	if err != nil {
 		fmt.Printf("No music directory: %v\n", err)
 		return
 	}
 	for _, e := range entries {
 		if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".mp3") {
-			g.Songs = append(g.Songs, filepath.Join("music", e.Name()))
+			g.Songs = append(g.Songs, filepath.Join(g.Assets.MusicDir, e.Name()))
 		}
 	}
 	sort.Strings(g.Songs)
@@ -546,22 +482,26 @@ func (g *Game) CleanupMusic() {
 	rl.CloseAudioDevice()
 }
 
-// LoadSounds loads all sound effects from the sounds/ directory
+// LoadSounds loads all sound effects using paths from config
 func (g *Game) LoadSounds() {
-	if _, err := os.Stat("sounds"); os.IsNotExist(err) {
+	if g.SoundPaths.Crunch == "" {
+		fmt.Println("No sound paths configured")
+		return
+	}
+	if _, err := os.Stat(g.Assets.SoundsDir); os.IsNotExist(err) {
 		fmt.Println("No sounds directory")
 		return
 	}
-	g.SndExplosion[0] = rl.LoadSound("sounds/explosion1.wav")
-	g.SndExplosion[1] = rl.LoadSound("sounds/explosion2.wav")
-	g.SndExplosion[2] = rl.LoadSound("sounds/explosion3.wav")
-	g.SndCrunch = rl.LoadSound("sounds/crunch.wav")
-	g.SndPopulate = rl.LoadSound("sounds/populate.wav")
-	g.SndSafe = rl.LoadSound("sounds/safe.wav")
-	g.SndSpawn = rl.LoadSound("sounds/spawn.wav")
-	g.SndSpawnWaif = rl.LoadSound("sounds/spawn-waif.wav")
-	g.SndThrow = rl.LoadSound("sounds/throw.wav")
-	g.SndSpotted = rl.LoadSound("sounds/spotted.wav")
+	for i, path := range g.SoundPaths.Explosion {
+		g.SndExplosion[i] = rl.LoadSound(path)
+	}
+	g.SndCrunch = rl.LoadSound(g.SoundPaths.Crunch)
+	g.SndPopulate = rl.LoadSound(g.SoundPaths.Populate)
+	g.SndSafe = rl.LoadSound(g.SoundPaths.Safe)
+	g.SndSpawn = rl.LoadSound(g.SoundPaths.Spawn)
+	g.SndSpawnWaif = rl.LoadSound(g.SoundPaths.SpawnWaif)
+	g.SndThrow = rl.LoadSound(g.SoundPaths.Throw)
+	g.SndSpotted = rl.LoadSound(g.SoundPaths.Spotted)
 	g.SoundsLoaded = true
 }
 
@@ -599,37 +539,165 @@ func (g *Game) PlayExplosion() {
 }
 
 // MapData represents the YAML structure for the tile map
-type MapData struct {
+// ConfigData is the YAML config file format
+type ConfigData struct {
+	Assets  AssetsConfig              `yaml:"assets"`
+	Config  GameConfig                `yaml:"config"`
+	Tiles   TilesConfig               `yaml:"tiles"`
+	Sprites map[string]*SpriteDefYAML `yaml:"sprites"`
+	Thugs   []string                  `yaml:"thugs"`
+	Sounds  SoundsConfig              `yaml:"sounds"`
+}
+
+// AssetsConfig holds file paths for game assets
+type AssetsConfig struct {
+	Spritesheet   string `yaml:"spritesheet"`
+	Font          string `yaml:"font"`
+	InvulnShader  string `yaml:"invuln_shader"`
+	PaletteShader string `yaml:"palette_shader"`
+	SoundsDir     string `yaml:"sounds_dir"`
+	MusicDir      string `yaml:"music_dir"`
+}
+
+// GameConfig holds tunable game parameters
+type GameConfig struct {
+	ThreatMaxStart float64 `yaml:"threat_max_start"`
+}
+
+// TilesConfig holds tile map layout and parameters
+type TilesConfig struct {
+	BlackTile       int    `yaml:"black_tile"`
+	RockTile        int    `yaml:"rock_tile"`
 	EndzoneTile     int    `yaml:"endzone_tile"`
 	FirstWallTile   int    `yaml:"first_wall_tile"`
 	WallTileCnt     int    `yaml:"wall_tile_cnt"`
 	FirstAccentTile int    `yaml:"first_accent_tile"`
 	AccentTileCnt   int    `yaml:"accent_tile_cnt"`
 	AccentPct       int    `yaml:"accent_pct"`
-	Tiles           string `yaml:"tiles"`
+	Map             string `yaml:"map"`
 }
 
-// LoadTileMap loads tile positions from map.yaml and converts values to sprite numbers
-func (g *Game) LoadTileMap(filename string) error {
+// SoundsConfig holds file paths for sound effects
+type SoundsConfig struct {
+	Explosion []string `yaml:"explosion"`
+	Crunch    string   `yaml:"crunch"`
+	Populate  string   `yaml:"populate"`
+	Safe      string   `yaml:"safe"`
+	Spawn     string   `yaml:"spawn"`
+	SpawnWaif string   `yaml:"spawn_waif"`
+	Throw     string   `yaml:"throw"`
+	Spotted   string   `yaml:"spotted"`
+}
+
+// SpriteDefYAML is the YAML representation of a sprite definition
+type SpriteDefYAML struct {
+	Name         string  `yaml:"name,omitempty"`
+	Idle         []int   `yaml:"idle"`
+	IdleFrames   int     `yaml:"idle_frames,omitempty"`
+	Poses        []int   `yaml:"poses,omitempty"`
+	Frames       int     `yaml:"frames,omitempty"`
+	Poses2       []int   `yaml:"poses2,omitempty"`
+	Frames2      int     `yaml:"frames2,omitempty"`
+	Speed        float64 `yaml:"speed,omitempty"`
+	Speed2       float64 `yaml:"speed2,omitempty"`
+	Width        int     `yaml:"width,omitempty"`
+	Height       int     `yaml:"height,omitempty"`
+	XOff         int     `yaml:"x_off,omitempty"`
+	YOff         int     `yaml:"y_off,omitempty"`
+	Avoid        bool    `yaml:"avoid,omitempty"`
+	Ignore       bool    `yaml:"ignore,omitempty"`
+	Decay        bool    `yaml:"decay,omitempty"`
+	Bounce       bool    `yaml:"bounce,omitempty"`
+	Final        string  `yaml:"final,omitempty"`
+	Linger       bool    `yaml:"linger,omitempty"`
+	Kind         string  `yaml:"kind,omitempty"`
+	YMin         int     `yaml:"y_min,omitempty"`
+	YMax         int     `yaml:"y_max,omitempty"`
+	XMaxLimit    int     `yaml:"x_max_limit,omitempty"`
+	InvulnFrames int     `yaml:"invuln_frames,omitempty"`
+}
+
+func parseKind(s string) Kind {
+	switch s {
+	case "player":
+		return Player
+	case "waif":
+		return Waif
+	case "thug":
+		return Thug
+	case "crate":
+		return Crate
+	case "heart":
+		return Heart
+	default:
+		return 0
+	}
+}
+
+func (y *SpriteDefYAML) toSpriteDef(key string) *SpriteDef {
+	name := y.Name
+	if name == "" {
+		name = key
+	}
+	return &SpriteDef{
+		Name:         name,
+		Idle:         y.Idle,
+		IdleFrames:   y.IdleFrames,
+		Poses:        y.Poses,
+		Frames:       y.Frames,
+		Poses2:       y.Poses2,
+		Frames2:      y.Frames2,
+		Speed:        y.Speed,
+		Speed2:       y.Speed2,
+		Width:        y.Width,
+		Height:       y.Height,
+		XOff:         y.XOff,
+		YOff:         y.YOff,
+		Avoid:        y.Avoid,
+		Ignore:       y.Ignore,
+		Decay:        y.Decay,
+		Bounce:       y.Bounce,
+		Linger:       y.Linger,
+		Kind:         parseKind(y.Kind),
+		YMin:         y.YMin,
+		YMax:         y.YMax,
+		XMaxLimit:    y.XMaxLimit,
+		InvulnFrames: y.InvulnFrames,
+	}
+}
+
+// LoadConfig loads all configuration from config.yaml: assets, sprites, thugs, tiles
+func (g *Game) LoadConfig(filename string) error {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return err
 	}
 
-	var mapData MapData
-	if err := yaml.Unmarshal(data, &mapData); err != nil {
+	var cfg ConfigData
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return err
 	}
 
-	// Store tile config from YAML
-	g.EndzoneTile = mapData.EndzoneTile
-	g.FirstWallTile = mapData.FirstWallTile
-	g.WallTileCnt = mapData.WallTileCnt
-	g.FirstAccentTile = mapData.FirstAccentTile
-	g.AccentTileCnt = mapData.AccentTileCnt
-	g.AccentPct = mapData.AccentPct
+	// Store asset paths and sound paths
+	g.Assets = cfg.Assets
+	g.SoundPaths = cfg.Sounds
 
-	rows := strings.Split(strings.TrimSpace(mapData.Tiles), "\n")
+	// Store config values
+	g.ThreatMaxStart = cfg.Config.ThreatMaxStart
+	g.ThreatMax = cfg.Config.ThreatMaxStart
+
+	// Store tile config
+	g.BlackTile = cfg.Tiles.BlackTile
+	g.RockTile = cfg.Tiles.RockTile
+	g.EndzoneTile = cfg.Tiles.EndzoneTile
+	g.FirstWallTile = cfg.Tiles.FirstWallTile
+	g.WallTileCnt = cfg.Tiles.WallTileCnt
+	g.FirstAccentTile = cfg.Tiles.FirstAccentTile
+	g.AccentTileCnt = cfg.Tiles.AccentTileCnt
+	g.AccentPct = cfg.Tiles.AccentPct
+
+	// Parse tile map
+	rows := strings.Split(strings.TrimSpace(cfg.Tiles.Map), "\n")
 	g.TileMap = make([][]int, len(rows))
 	for rowIdx, line := range rows {
 		g.TileMap[rowIdx] = make([]int, len(line))
@@ -637,17 +705,34 @@ func (g *Game) LoadTileMap(filename string) error {
 			val := int(ch - '0')
 			switch val {
 			case 1:
-				// Wall tile: random sprite from first_wall_tile to first_wall_tile + wall_tile_cnt - 1
 				g.TileMap[rowIdx][colIdx] = g.FirstWallTile + rand.Intn(g.WallTileCnt)
 			case 2:
-				// Endzone tile
 				g.TileMap[rowIdx][colIdx] = g.EndzoneTile
 			default:
-				// Floor: leave as 0, will be populated on first screen visit
 				g.TileMap[rowIdx][colIdx] = 0
 			}
 		}
 	}
+
+	// Parse sprite definitions
+	g.Defs = make(map[string]*SpriteDef, len(cfg.Sprites))
+	for key, ydef := range cfg.Sprites {
+		g.Defs[key] = ydef.toSpriteDef(key)
+	}
+
+	// Resolve Final references for sprites
+	for key, def := range g.Defs {
+		if f := cfg.Sprites[key].Final; f != "" {
+			def.Final = g.Defs[f]
+		}
+	}
+
+	// Build thug list from sprite references
+	g.Thugs = make([]*SpriteDef, len(cfg.Thugs))
+	for i, name := range cfg.Thugs {
+		g.Thugs[i] = g.Defs[name]
+	}
+
 	return nil
 }
 
@@ -664,7 +749,7 @@ func (g *Game) IsWall(col, row int) bool {
 	}
 	tile := g.TileMap[row][col]
 	return (tile >= g.FirstWallTile && tile < g.FirstWallTile+g.WallTileCnt) ||
-		tile == RockTile
+		tile == g.RockTile
 }
 
 // NewID generates a new unique ID
@@ -729,7 +814,7 @@ func (g *Game) Emplace(def *SpriteDef, x, y float64, opts ...func(*GameObject)) 
 	}
 
 	// Junk lingers with random duration: min 6 + random up to 240 frames (60fps)
-	if def == DefJunk && obj.FrameFunc == nil {
+	if def == g.Defs["junk"] && obj.FrameFunc == nil {
 		obj.FrameFunc = func(o *GameObject) {
 			o.CurrentFrames = max(6, g.Rng.Intn(240))
 		}
@@ -953,7 +1038,7 @@ func PlayerInput(g *Game, p *GameObject) int {
 func (g *Game) PlaceMine(p *GameObject) {
 	if g.MineCount > 0 {
 		g.MineCount--
-		g.Emplace(DefMine, p.X, p.Y, func(obj *GameObject) {
+		g.Emplace(g.Defs["mine"], p.X, p.Y, func(obj *GameObject) {
 			obj.FrameFunc = func(o *GameObject) {
 				if !o.Armed {
 					o.Armed = true
@@ -969,7 +1054,7 @@ func (g *Game) PlaceMine(p *GameObject) {
 func (g *Game) ThrowBomb(p *GameObject) {
 	if g.BombCount > 0 {
 		g.BombCount--
-		g.Emplace(DefBomb, p.X, p.Y, func(obj *GameObject) {
+		g.Emplace(g.Defs["bomb"], p.X, p.Y, func(obj *GameObject) {
 			obj.Dir = p.LastDir
 		})
 		g.PlaySfx(g.SndThrow, "throw")
@@ -1009,7 +1094,7 @@ func (g *Game) Crunch(p *GameObject) bool {
 			obj.PalSwap = p.PalSwap
 		})
 		// Play crunch for dead bodies (not junk-producing deaths)
-		if p.Final != DefJunk {
+		if p.Final != g.Defs["junk"] {
 			g.PlaySfx(g.SndCrunch, "crunch")
 		}
 		return true
@@ -1703,7 +1788,7 @@ func (g *Game) SpawnWaif() {
 	g.MakePing(x, y, rl.White)
 
 	palIndex := g.Rng.Intn(3)
-	g.Emplace(DefWaif, x, y, func(obj *GameObject) {
+	g.Emplace(g.Defs["waif"], x, y, func(obj *GameObject) {
 		obj.PalIndex = palIndex
 		obj.PalSwap = true
 		obj.JitterTime = 0
@@ -1730,8 +1815,8 @@ func SlowStart(g *Game, p *GameObject) bool {
 
 // Respawn creates a new enemy
 func (g *Game) Respawn() {
-	idx := g.Rng.Intn(len(Thugs))
-	def := Thugs[idx]
+	idx := g.Rng.Intn(len(g.Thugs))
+	def := g.Thugs[idx]
 
 	x := g.CamX + float64(g.Rng.Intn(120-def.Width))
 	var y float64
@@ -1801,7 +1886,7 @@ func (g *Game) Populate(x float64, factor float64) {
 		// Assign floor tile: mostly black, small chance of accent
 		n := g.Rng.Float64() * 100
 		if n < 90 {
-			g.TileMap[r][c] = BlackTile
+			g.TileMap[r][c] = g.BlackTile
 		} else {
 			accentIdx := int((101 - n) / 2)
 			if g.AccentTileCnt > 0 {
@@ -1810,7 +1895,7 @@ func (g *Game) Populate(x float64, factor float64) {
 				}
 				g.TileMap[r][c] = g.FirstAccentTile + accentIdx
 			} else {
-				g.TileMap[r][c] = BlackTile
+				g.TileMap[r][c] = g.BlackTile
 			}
 		}
 
@@ -1818,17 +1903,17 @@ func (g *Game) Populate(x float64, factor float64) {
 		if c < px-nopL || c > px+nopR || r < py-nopU || r > py+nopD {
 			added := false
 			if g.Threat < g.ThreatMax*factor {
-				idx := g.Rng.Intn(len(Thugs)-1) + 1 // skip mech (index 0) due to 16x16
-				def := Thugs[idx]
+				idx := g.Rng.Intn(len(g.Thugs)-1) + 1 // skip mech (index 0) due to 16x16
+				def := g.Thugs[idx]
 				added = g.Spawn(def, float64(c*TileSize), float64(r*TileSize), factor)
 			}
 			if !added && r > 1 && r < 18 {
 				if n < 0.5 {
-					g.Emplace(DefCrate, float64(c*TileSize), float64(r*TileSize))
+					g.Emplace(g.Defs["crate"], float64(c*TileSize), float64(r*TileSize))
 				} else if n < 1 {
-					g.TileMap[r][c] = RockTile
+					g.TileMap[r][c] = g.RockTile
 				} else if n < 1.5 {
-					g.Emplace(DefJunk, float64(c*TileSize), float64(r*TileSize))
+					g.Emplace(g.Defs["junk"], float64(c*TileSize), float64(r*TileSize))
 				}
 			}
 		}
@@ -1850,7 +1935,7 @@ func (g *Game) PopulateTitleBackground() {
 			}
 			n := rng.Float64() * 100
 			if n < 90 {
-				g.TileMap[r][c] = BlackTile
+				g.TileMap[r][c] = g.BlackTile
 			} else if g.AccentTileCnt > 0 {
 				accentIdx := int((101 - n) / 2)
 				if accentIdx >= g.AccentTileCnt {
@@ -1858,7 +1943,7 @@ func (g *Game) PopulateTitleBackground() {
 				}
 				g.TileMap[r][c] = g.FirstAccentTile + accentIdx
 			} else {
-				g.TileMap[r][c] = BlackTile
+				g.TileMap[r][c] = g.BlackTile
 			}
 		}
 	}
@@ -2031,7 +2116,7 @@ func (g *Game) UpdateOptions() {
 		g.updateThreatSlider(mouse)
 		if enterPressed {
 			// Reset to default
-			g.ThreatMax = ThreatMaxStart
+			g.ThreatMax = g.ThreatMaxStart
 		}
 	case 7: // Debug
 		if rl.IsKeyPressed(rl.KeyRight) || enterPressed {
@@ -2385,7 +2470,7 @@ func (g *Game) StartGame() {
 		g.BombCount = 3
 		g.MineCount = 3
 		g.Score = 0
-		g.ThreatMax = ThreatMaxStart
+		g.ThreatMax = g.ThreatMaxStart
 		g.Level = 0
 	}
 
@@ -2405,7 +2490,7 @@ func (g *Game) StartGame() {
 	}
 
 	// Create player
-	g.Player = g.Emplace(DefPlayer, 64, 80, func(obj *GameObject) {
+	g.Player = g.Emplace(g.Defs["player"], 64, 80, func(obj *GameObject) {
 		obj.PathC = -1
 		obj.PathR = -1
 		obj.Controller = PlayerInput
@@ -3063,6 +3148,11 @@ func main() {
 	game := NewGame()
 	game.WindowSize = windowSize
 	game.InitCamera()
+
+	if err := game.LoadConfig("config.yaml"); err != nil {
+		fmt.Printf("Fatal: %v\n", err)
+		return
+	}
 
 	if err := game.LoadResources(); err != nil {
 		fmt.Printf("Warning: %v\n", err)
