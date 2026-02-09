@@ -186,6 +186,7 @@ type Spark struct {
 type Ping struct {
 	X, Y   float64
 	Radius float64
+	Color  rl.Color
 }
 
 // Game state
@@ -1329,8 +1330,8 @@ func (g *Game) UpdateSparks() {
 }
 
 // MakePing creates a ping effect
-func (g *Game) MakePing(x, y float64) {
-	g.Pings = append(g.Pings, Ping{X: x, Y: y, Radius: 0})
+func (g *Game) MakePing(x, y float64, color rl.Color) {
+	g.Pings = append(g.Pings, Ping{X: x, Y: y, Radius: 0, Color: color})
 }
 
 // UpdatePings updates ping effects
@@ -1675,7 +1676,7 @@ func (g *Game) SpawnWaif() {
 		y = YMax - 8
 	}
 
-	g.MakePing(x, y)
+	g.MakePing(x, y, rl.White)
 
 	palIndex := g.Rng.Intn(3)
 	g.Emplace(DefWaif, x, y, func(obj *GameObject) {
@@ -1718,7 +1719,9 @@ func (g *Game) Respawn() {
 		y = float64(YMax - def.Height)
 	}
 
-	g.Spawn(def, x, y, 1)
+	if g.Spawn(def, x, y, 1) {
+		g.MakePing(x, y, rl.Red)
+	}
 }
 
 // Populate fills a screen with floor tiles and objects on first visit.
@@ -2768,7 +2771,7 @@ func (g *Game) DrawGame() {
 
 	// Draw pings
 	for _, p := range g.Pings {
-		rl.DrawCircleLines(int32(p.X), int32(p.Y), float32(p.Radius), rl.White)
+		rl.DrawCircleLines(int32(p.X), int32(p.Y), float32(p.Radius), p.Color)
 	}
 }
 
