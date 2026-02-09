@@ -149,11 +149,11 @@ type GameObject struct {
 	IsInvuln     bool
 	PalIndex     int  // for waif recoloring
 	PalSwap      bool // draw with palette swap shader
+	Spotted      bool // waif: spotted sound has played
 
 	// Pathfinding
 	Target       *GameObject
 	TargetCrumb  *Crumb
-	ChasingWaif  bool
 	JitterX      float64
 	JitterY      float64
 	JitterTime   int
@@ -261,18 +261,17 @@ type Game struct {
 	LastMousePos   rl.Vector2 // previous frame mouse position for detecting movement
 
 	// Sound effects
-	SndExplosion    [3]rl.Sound
-	SndCrunch       rl.Sound
-	SndPopulate     rl.Sound
-	SndSafe         rl.Sound
-	SndSpawn        rl.Sound
-	SndSpawnWaif    rl.Sound
-	SndThrow        rl.Sound
-	SndSpotted      rl.Sound
-	SoundsLoaded    bool
-	SfxVolume       float32 // 0.0 to 1.0
-	SfxEnabled      bool    // toggle sound effects on/off
-	SpottedCooldown int     // global cooldown ticks before spotted SFX can replay
+	SndExplosion [3]rl.Sound
+	SndCrunch    rl.Sound
+	SndPopulate  rl.Sound
+	SndSafe      rl.Sound
+	SndSpawn     rl.Sound
+	SndSpawnWaif rl.Sound
+	SndThrow     rl.Sound
+	SndSpotted   rl.Sound
+	SoundsLoaded bool
+	SfxVolume    float32 // 0.0 to 1.0
+	SfxEnabled   bool    // toggle sound effects on/off
 }
 
 // Sprite definitions
@@ -1428,14 +1427,9 @@ func Follow(g *Game, p *GameObject) int {
 		tc = nil
 		t = g.Retarget(p)
 		p.Target = t
-		if t != nil && t.Waif {
-			if !p.ChasingWaif && g.SpottedCooldown == 0 {
-				g.PlaySfx(g.SndSpotted, "spotted")
-				g.SpottedCooldown = 120
-			}
-			p.ChasingWaif = true
-		} else {
-			p.ChasingWaif = false
+		if t != nil && t.Waif && !t.Spotted {
+			g.PlaySfx(g.SndSpotted, "spotted")
+			t.Spotted = true
 		}
 	}
 
@@ -2301,9 +2295,6 @@ func (g *Game) StepSimulation() {
 		}
 	}
 
-	if g.SpottedCooldown > 0 {
-		g.SpottedCooldown--
-	}
 	g.Tick++
 
 	if g.Tick%200 == 0 {
