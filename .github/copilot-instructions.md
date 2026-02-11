@@ -13,3 +13,9 @@ As the codebase evolves, frequently suggest brief updates to the architecture no
 - **Kind is a bit-flag type** (`1 << iota`), not a plain enum. `Friendly = Player | Waif` is a composite mask used for collision checks.
 
 - **The Game struct uses embedded sub-structs** (TileConfig, SoundState, etc.) to organize fields without pointer indirection.
+
+- **Named PICO-8 color vars** (`PicoBlack`..`PicoPeach`) plus overlay/highlight colors replace all magic `rl.Color{}` literals and array indices.
+
+- **Balance params** (`heart_count`, `bomb_count`, `mine_count`, `threat_max_start`) live in `config.yaml` under `config:`, loaded into `GameConfig` and copied to `Game` at game start.
+
+- **Prefer config.yaml over hardcoded constants.** Any value that could feasibly be tuned without recompiling—counts, speeds, timings, thresholds, colors, asset paths—should live in config.yaml rather than as a Go literal.
