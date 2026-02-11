@@ -198,7 +198,7 @@ type Audio struct {
 	Music        rl.Music
 	MusicPlaying bool
 	MusicVolume  float32
-	SndExplosion [3]rl.Sound
+	SndExplosion []rl.Sound
 	SndCrunch    rl.Sound
 	SndPopulate  rl.Sound
 	SndSafe      rl.Sound
@@ -290,6 +290,9 @@ type Game struct {
 	Defs           map[string]*SpriteDef
 	Thugs          []*SpriteDef
 	ThreatMaxStart float64
+	StartHearts    int
+	StartBombs     int
+	StartMines     int
 	Assets         AssetsConfig
 	SoundPaths     SoundsConfig
 
@@ -302,16 +305,13 @@ type Game struct {
 // NewGame creates a new game instance
 func NewGame() *Game {
 	g := &Game{
-		State:      StateTitle,
-		Mode:       1,
-		Debug:      0,
-		HeartCount: 4,
-		BombCount:  3,
-		MineCount:  3,
-		CamY:       16,
-		Path:       make([][]int, 32),
-		Audio:      Audio{SfxVolume: 1.0, SfxEnabled: true},
-		MenuState:  MenuState{FirstLaunch: true},
+		State:     StateTitle,
+		Mode:      1,
+		Debug:     0,
+		CamY:      16,
+		Path:      make([][]int, 32),
+		Audio:     Audio{MusicVolume: 0.5, SfxVolume: 1.0, SfxEnabled: true},
+		MenuState: MenuState{FirstLaunch: true},
 	}
 	for i := range g.Path {
 		g.Path[i] = make([]int, 20)
@@ -435,7 +435,6 @@ func (g *Game) PlaySong(index int) {
 	}
 	g.SongIndex = index % len(g.Songs)
 	g.Music = rl.LoadMusicStream(g.Songs[g.SongIndex])
-	g.MusicVolume = max(g.MusicVolume, 0.5)
 	rl.SetMusicVolume(g.Music, g.MusicVolume)
 	rl.PlayMusicStream(g.Music)
 	g.MusicPlaying = true
@@ -484,24 +483,32 @@ func (g *Game) CleanupMusic() {
 
 // LoadSounds loads all sound effects using paths from config
 func (g *Game) LoadSounds() {
-	if g.SoundPaths.Crunch == "" {
-		fmt.Println("No sound paths configured")
-		return
-	}
 	if _, err := os.Stat(g.Assets.SoundsDir); os.IsNotExist(err) {
 		fmt.Println("No sounds directory")
 		return
 	}
-	for i, path := range g.SoundPaths.Explosion {
-		g.SndExplosion[i] = rl.LoadSound(path)
+	load := func(path string, name string) rl.Sound {
+		if path == "" {
+			fmt.Printf("Warning: no path for sound %s\n", name)
+			return rl.Sound{}
+		}
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			fmt.Printf("Warning: missing sound file %s\n", path)
+			return rl.Sound{}
+		}
+		return rl.LoadSound(path)
 	}
-	g.SndCrunch = rl.LoadSound(g.SoundPaths.Crunch)
-	g.SndPopulate = rl.LoadSound(g.SoundPaths.Populate)
-	g.SndSafe = rl.LoadSound(g.SoundPaths.Safe)
-	g.SndSpawn = rl.LoadSound(g.SoundPaths.Spawn)
-	g.SndSpawnWaif = rl.LoadSound(g.SoundPaths.SpawnWaif)
-	g.SndThrow = rl.LoadSound(g.SoundPaths.Throw)
-	g.SndSpotted = rl.LoadSound(g.SoundPaths.Spotted)
+	g.SndExplosion = make([]rl.Sound, len(g.SoundPaths.Explosion))
+	for i, path := range g.SoundPaths.Explosion {
+		g.SndExplosion[i] = load(path, fmt.Sprintf("explosion%d", i))
+	}
+	g.SndCrunch = load(g.SoundPaths.Crunch, "crunch")
+	g.SndPopulate = load(g.SoundPaths.Populate, "populate")
+	g.SndSafe = load(g.SoundPaths.Safe, "safe")
+	g.SndSpawn = load(g.SoundPaths.Spawn, "spawn")
+	g.SndSpawnWaif = load(g.SoundPaths.SpawnWaif, "spawn_waif")
+	g.SndThrow = load(g.SoundPaths.Throw, "throw")
+	g.SndSpotted = load(g.SoundPaths.Spotted, "spotted")
 	g.SoundsLoaded = true
 }
 
@@ -533,8 +540,8 @@ func (g *Game) PlaySfx(s rl.Sound, name string) {
 
 // PlayExplosion plays a random explosion sound
 func (g *Game) PlayExplosion() {
-	if g.SoundsLoaded && g.Rng != nil {
-		g.PlaySfx(g.SndExplosion[g.Rng.Intn(3)], "explosion")
+	if g.SoundsLoaded && g.Rng != nil && len(g.SndExplosion) > 0 {
+		g.PlaySfx(g.SndExplosion[g.Rng.Intn(len(g.SndExplosion))], "explosion")
 	}
 }
 
@@ -562,6 +569,9 @@ type AssetsConfig struct {
 // GameConfig holds tunable game parameters
 type GameConfig struct {
 	ThreatMaxStart float64 `yaml:"threat_max_start"`
+	HeartCount     int     `yaml:"heart_count"`
+	BombCount      int     `yaml:"bomb_count"`
+	MineCount      int     `yaml:"mine_count"`
 }
 
 // TilesConfig holds tile map layout and parameters
@@ -685,6 +695,9 @@ func (g *Game) LoadConfig(filename string) error {
 	// Store config values
 	g.ThreatMaxStart = cfg.Config.ThreatMaxStart
 	g.ThreatMax = cfg.Config.ThreatMaxStart
+	g.StartHearts = cfg.Config.HeartCount
+	g.StartBombs = cfg.Config.BombCount
+	g.StartMines = cfg.Config.MineCount
 
 	// Store tile config
 	g.BlackTile = cfg.Tiles.BlackTile
@@ -1590,7 +1603,7 @@ func FollowPath(g *Game, p *GameObject) int {
 	px, py := int(p.X), int(p.Y)
 
 	// At or past finish line, or game won - just go right
-	if px >= FinishLine || g.Win() {
+	if px >= FinishLine || g.Won {
 		return DirRight
 	}
 
@@ -1707,7 +1720,7 @@ func PlayerPostMove(g *Game, p *GameObject) {
 
 // WaifPostMove handles waif post-movement
 func WaifPostMove(g *Game, p *GameObject) {
-	if p.X > FinishLine && !p.Scored && (g.Playing || g.Win()) {
+	if p.X > FinishLine && !p.Scored && (g.Playing || g.Won) {
 		g.Score += 100
 		p.Scored = true
 		p.Ignore = true
@@ -1763,7 +1776,6 @@ func (g *Game) Spawn(def *SpriteDef, x, y float64, factor float64) bool {
 		obj.BaseSpeed = s
 		obj.Threat = t
 		obj.XMaxLimit = FinishLine - obj.Width - obj.XOff
-		obj.Kind = Thug
 		obj.Controller = Follow
 	})
 
@@ -1833,6 +1845,16 @@ func (g *Game) Respawn() {
 	}
 }
 
+// randomFloorTile returns a black or accent tile index using rng
+func (g *Game) randomFloorTile(rng *rand.Rand) int {
+	n := rng.Float64() * 100
+	if n < 90 || g.AccentTileCnt == 0 {
+		return g.BlackTile
+	}
+	idx := min(int((101-n)/2), g.AccentTileCnt-1)
+	return g.FirstAccentTile + idx
+}
+
 // Populate fills a screen with floor tiles and objects on first visit.
 // It matches the original Lua: iterates tiles in random order, assigns
 // black or accent tiles, and spawns thugs/crates/rocks/junk outside a
@@ -1883,21 +1905,7 @@ func (g *Game) Populate(x float64, factor float64) {
 			continue
 		}
 
-		// Assign floor tile: mostly black, small chance of accent
-		n := g.Rng.Float64() * 100
-		if n < 90 {
-			g.TileMap[r][c] = g.BlackTile
-		} else {
-			accentIdx := int((101 - n) / 2)
-			if g.AccentTileCnt > 0 {
-				if accentIdx >= g.AccentTileCnt {
-					accentIdx = g.AccentTileCnt - 1
-				}
-				g.TileMap[r][c] = g.FirstAccentTile + accentIdx
-			} else {
-				g.TileMap[r][c] = g.BlackTile
-			}
-		}
+		g.TileMap[r][c] = g.randomFloorTile(g.Rng)
 
 		// Only spawn objects outside nopop zone
 		if c < px-nopL || c > px+nopR || r < py-nopU || r > py+nopD {
@@ -1908,6 +1916,7 @@ func (g *Game) Populate(x float64, factor float64) {
 				added = g.Spawn(def, float64(c*TileSize), float64(r*TileSize), factor)
 			}
 			if !added && r > 1 && r < 18 {
+				n := g.Rng.Float64() * 100
 				if n < 0.5 {
 					g.Emplace(g.Defs["crate"], float64(c*TileSize), float64(r*TileSize))
 				} else if n < 1 {
@@ -1920,30 +1929,13 @@ func (g *Game) Populate(x float64, factor float64) {
 	}
 }
 
-// Win checks if player won
-func (g *Game) Win() bool {
-	return g.Won
-}
-
 // PopulateTitleBackground fills empty tiles with black/accent tiles for the title screen
 func (g *Game) PopulateTitleBackground() {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for r := range g.TileMap {
 		for c := range g.TileMap[r] {
-			if g.TileMap[r][c] != 0 {
-				continue
-			}
-			n := rng.Float64() * 100
-			if n < 90 {
-				g.TileMap[r][c] = g.BlackTile
-			} else if g.AccentTileCnt > 0 {
-				accentIdx := int((101 - n) / 2)
-				if accentIdx >= g.AccentTileCnt {
-					accentIdx = g.AccentTileCnt - 1
-				}
-				g.TileMap[r][c] = g.FirstAccentTile + accentIdx
-			} else {
-				g.TileMap[r][c] = g.BlackTile
+			if g.TileMap[r][c] == 0 {
+				g.TileMap[r][c] = g.randomFloorTile(rng)
 			}
 		}
 	}
@@ -2466,9 +2458,9 @@ func (g *Game) StartGame() {
 		g.Level++
 	} else {
 		// Game over: reset everything
-		g.HeartCount = 4
-		g.BombCount = 3
-		g.MineCount = 3
+		g.HeartCount = g.StartHearts
+		g.BombCount = g.StartBombs
+		g.MineCount = g.StartMines
 		g.Score = 0
 		g.ThreatMax = g.ThreatMaxStart
 		g.Level = 0
@@ -2571,7 +2563,7 @@ func (g *Game) Draw() {
 // DrawOptions draws the options overlay (also serves as pause menu during gameplay)
 func (g *Game) DrawOptions() {
 	// Semi-transparent background
-	rl.DrawRectangle(0, 0, g.WindowSize, g.WindowSize, rl.Color{R: 0, G: 0, B: 0, A: 200})
+	rl.DrawRectangle(0, 0, g.WindowSize, g.WindowSize, OverlayDim)
 
 	scale := float32(g.WindowSize) / 512.0
 	fontSize := 28 * scale
@@ -2581,11 +2573,11 @@ func (g *Game) DrawOptions() {
 	if g.State == StatePlaying || g.State == StateGameOver {
 		titleX := float32(g.WindowSize)/2 - 50*scale
 		titleY := 12 * scale
-		rl.DrawTextEx(g.Font, "PAUSED", rl.Vector2{X: titleX, Y: titleY}, 55*scale, 2, ColorOrange)
+		rl.DrawTextEx(g.Font, "PAUSED", rl.Vector2{X: titleX, Y: titleY}, 55*scale, 2, PicoOrange)
 	} else {
 		titleX := float32(g.WindowSize)/2 - 60*scale
 		titleY := 12 * scale
-		rl.DrawTextEx(g.Font, "OPTIONS", rl.Vector2{X: titleX, Y: titleY}, 55*scale, 2, ColorOrange)
+		rl.DrawTextEx(g.Font, "OPTIONS", rl.Vector2{X: titleX, Y: titleY}, 55*scale, 2, PicoOrange)
 	}
 
 	for i := 0; i < optionsItemCount; i++ {
@@ -2594,13 +2586,13 @@ func (g *Game) DrawOptions() {
 
 		// Highlight bar
 		if selected {
-			rl.DrawRectangle(menuX, y, menuW, rowH, rl.Color{R: 255, G: 163, B: 0, A: 40})
+			rl.DrawRectangle(menuX, y, menuW, rowH, HighlightOrange)
 		}
 
-		labelColor := ColorDarkOrange
-		valueColor := ColorOrange
+		labelColor := PicoBrown
+		valueColor := PicoOrange
 		if selected {
-			labelColor = ColorOrange
+			labelColor = PicoOrange
 			valueColor = rl.White
 		}
 
@@ -2611,7 +2603,7 @@ func (g *Game) DrawOptions() {
 		case 0: // Volume slider
 			rl.DrawTextEx(g.Font, "Volume", rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
 			sx, sy, sw, sh := g.volumeSliderRect()
-			rl.DrawRectangle(sx, sy, sw, sh, rl.Color{R: 80, G: 80, B: 80, A: 255})
+			rl.DrawRectangle(sx, sy, sw, sh, SliderTrack)
 			fillW := int32(float32(sw) * g.MusicVolume)
 			rl.DrawRectangle(sx, sy, fillW, sh, valueColor)
 			knobX := sx + fillW
@@ -2653,7 +2645,7 @@ func (g *Game) DrawOptions() {
 		case 3: // SFX Volume slider
 			rl.DrawTextEx(g.Font, "SFX Vol", rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
 			sx, sy, sw, sh := g.sfxVolumeSliderRect()
-			rl.DrawRectangle(sx, sy, sw, sh, rl.Color{R: 80, G: 80, B: 80, A: 255})
+			rl.DrawRectangle(sx, sy, sw, sh, SliderTrack)
 			fillW := int32(float32(sw) * g.SfxVolume)
 			rl.DrawRectangle(sx, sy, fillW, sh, valueColor)
 			knobX := sx + fillW
@@ -2695,7 +2687,7 @@ func (g *Game) DrawOptions() {
 		case 6: // Threat slider
 			rl.DrawTextEx(g.Font, "Threat", rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
 			sx, sy, sw, sh := g.threatSliderRect()
-			rl.DrawRectangle(sx, sy, sw, sh, rl.Color{R: 80, G: 80, B: 80, A: 255})
+			rl.DrawRectangle(sx, sy, sw, sh, SliderTrack)
 			frac := float32((g.ThreatMax - 0.5) / 9.5)
 			fillW := int32(float32(sw) * frac)
 			rl.DrawRectangle(sx, sy, fillW, sh, valueColor)
@@ -2726,31 +2718,31 @@ func (g *Game) DrawOptions() {
 
 // DrawHelp draws the help overlay
 func (g *Game) DrawHelp() {
-	rl.DrawRectangle(0, 0, g.WindowSize, g.WindowSize, rl.Color{R: 0, G: 0, B: 0, A: 220})
+	rl.DrawRectangle(0, 0, g.WindowSize, g.WindowSize, OverlayDark)
 	scale := float32(g.WindowSize) / 512.0
 	cx := float32(g.WindowSize) / 2
 	cy := float32(g.WindowSize)/2 - 40*scale
 
-	rl.DrawTextEx(g.Font, "HOW TO PLAY", rl.Vector2{X: cx - 120*scale, Y: cy - 80*scale}, 60*scale, 2, ColorOrange)
-	rl.DrawTextEx(g.Font, "Arrow keys to move", rl.Vector2{X: cx - 160*scale, Y: cy + 10*scale}, 30*scale, 2, ColorDarkOrange)
-	rl.DrawTextEx(g.Font, "Z to dash", rl.Vector2{X: cx - 160*scale, Y: cy + 50*scale}, 30*scale, 2, ColorDarkOrange)
-	rl.DrawTextEx(g.Font, "X to throw bomb", rl.Vector2{X: cx - 160*scale, Y: cy + 90*scale}, 30*scale, 2, ColorDarkOrange)
-	rl.DrawTextEx(g.Font, "C to place mine", rl.Vector2{X: cx - 160*scale, Y: cy + 130*scale}, 30*scale, 2, ColorDarkOrange)
-	rl.DrawTextEx(g.Font, "Press any key", rl.Vector2{X: cx - 120*scale, Y: cy + 200*scale}, 30*scale, 2, ColorOrange)
+	rl.DrawTextEx(g.Font, "HOW TO PLAY", rl.Vector2{X: cx - 120*scale, Y: cy - 80*scale}, 60*scale, 2, PicoOrange)
+	rl.DrawTextEx(g.Font, "Arrow keys to move", rl.Vector2{X: cx - 160*scale, Y: cy + 10*scale}, 30*scale, 2, PicoBrown)
+	rl.DrawTextEx(g.Font, "Z to dash", rl.Vector2{X: cx - 160*scale, Y: cy + 50*scale}, 30*scale, 2, PicoBrown)
+	rl.DrawTextEx(g.Font, "X to throw bomb", rl.Vector2{X: cx - 160*scale, Y: cy + 90*scale}, 30*scale, 2, PicoBrown)
+	rl.DrawTextEx(g.Font, "C to place mine", rl.Vector2{X: cx - 160*scale, Y: cy + 130*scale}, 30*scale, 2, PicoBrown)
+	rl.DrawTextEx(g.Font, "Press any key", rl.Vector2{X: cx - 120*scale, Y: cy + 200*scale}, 30*scale, 2, PicoOrange)
 }
 
 // DrawCredits draws the credits overlay
 func (g *Game) DrawCredits() {
-	rl.DrawRectangle(0, 0, g.WindowSize, g.WindowSize, rl.Color{R: 0, G: 0, B: 0, A: 220})
+	rl.DrawRectangle(0, 0, g.WindowSize, g.WindowSize, OverlayDark)
 	scale := float32(g.WindowSize) / 512.0
 	cx := float32(g.WindowSize) / 2
 	cy := float32(g.WindowSize)/2 - 40*scale
 
-	rl.DrawTextEx(g.Font, "CREDITS", rl.Vector2{X: cx - 80*scale, Y: cy - 80*scale}, 60*scale, 2, ColorOrange)
-	rl.DrawTextEx(g.Font, "Game by DuelingMachine", rl.Vector2{X: cx - 180*scale, Y: cy + 10*scale}, 30*scale, 2, ColorDarkOrange)
-	rl.DrawTextEx(g.Font, "Sprites by Hoyb and Q-Bit", rl.Vector2{X: cx - 200*scale, Y: cy + 60*scale}, 30*scale, 2, ColorDarkOrange)
-	rl.DrawTextEx(g.Font, "Music by Gruber", rl.Vector2{X: cx - 130*scale, Y: cy + 110*scale}, 30*scale, 2, ColorDarkOrange)
-	rl.DrawTextEx(g.Font, "Press any key", rl.Vector2{X: cx - 120*scale, Y: cy + 200*scale}, 30*scale, 2, ColorOrange)
+	rl.DrawTextEx(g.Font, "CREDITS", rl.Vector2{X: cx - 80*scale, Y: cy - 80*scale}, 60*scale, 2, PicoOrange)
+	rl.DrawTextEx(g.Font, "Game by DuelingMachine", rl.Vector2{X: cx - 180*scale, Y: cy + 10*scale}, 30*scale, 2, PicoBrown)
+	rl.DrawTextEx(g.Font, "Sprites by Hoyb and Q-Bit", rl.Vector2{X: cx - 200*scale, Y: cy + 60*scale}, 30*scale, 2, PicoBrown)
+	rl.DrawTextEx(g.Font, "Music by Gruber", rl.Vector2{X: cx - 130*scale, Y: cy + 110*scale}, 30*scale, 2, PicoBrown)
+	rl.DrawTextEx(g.Font, "Press any key", rl.Vector2{X: cx - 120*scale, Y: cy + 200*scale}, 30*scale, 2, PicoOrange)
 }
 
 // DrawTitle draws title screen text and menu
@@ -2758,7 +2750,7 @@ func (g *Game) DrawTitle() {
 	scale := float32(g.WindowSize) / 512.0
 	cx := float32(g.WindowSize)/2 + 48
 	cy := float32(g.WindowSize)/2 - 48
-	rl.DrawTextEx(g.Font, "HUNTED", rl.Vector2{X: cx - 120, Y: cy - 80 + 32}, 80, 2, ColorOrange)
+	rl.DrawTextEx(g.Font, "HUNTED", rl.Vector2{X: cx - 120, Y: cy - 80 + 32}, 80, 2, PicoOrange)
 
 	// Title menu
 	titleLabels := []string{"Start", "Options", "Credits", "Quit"}
@@ -2767,12 +2759,12 @@ func (g *Game) DrawTitle() {
 		selected := i == g.TitleMenuIndex
 
 		if selected {
-			rl.DrawRectangle(menuX, y, menuW, rowH, rl.Color{R: 255, G: 163, B: 0, A: 40})
+			rl.DrawRectangle(menuX, y, menuW, rowH, HighlightOrange)
 		}
 
-		color := ColorDarkOrange
+		color := PicoBrown
 		if selected {
-			color = ColorOrange
+			color = PicoOrange
 		}
 
 		lx := float32(menuX) + float32(menuW)/2 - 40*scale
@@ -2874,6 +2866,7 @@ func (g *Game) DrawGame() {
 
 	// Draw sparks
 	for _, s := range g.Sparks {
+		// Randomized orange-yellow for spark shimmer
 		color := rl.Color{R: 255, G: uint8(200 + g.Rng.Intn(55)), B: 0, A: 255}
 		rl.DrawRectangle(int32(s.X), int32(s.Y), 2, 2, color)
 	}
@@ -2887,7 +2880,7 @@ func (g *Game) DrawGame() {
 // DrawCrumbs draws breadcrumb trail as orange dots (debug&2)
 func (g *Game) DrawCrumbs() {
 	for _, c := range g.Crumbs {
-		rl.DrawPixel(int32(c.X), int32(c.Y), Pico8Colors[9])
+		rl.DrawPixel(int32(c.X), int32(c.Y), PicoOrange)
 	}
 }
 
@@ -2910,15 +2903,15 @@ func (g *Game) DrawTargetLine(obj *GameObject) {
 	}
 	ox, oy := int32(obj.X), int32(obj.Y)
 	if obj.TargetCrumb != nil {
-		rl.DrawLine(ox, oy, int32(obj.TargetCrumb.X), int32(obj.TargetCrumb.Y), Pico8Colors[6])
+		rl.DrawLine(ox, oy, int32(obj.TargetCrumb.X), int32(obj.TargetCrumb.Y), PicoLightGrey)
 	}
 	if obj.Target != nil {
-		color := Pico8Colors[12] // blue default
+		color := PicoBlue // blue default
 		switch obj.Target.Kind {
 		case Player:
-			color = Pico8Colors[8] // red for player
+			color = PicoRed // red for player
 		case Waif:
-			color = Pico8Colors[14] // pink for waif
+			color = PicoPink // pink for waif
 		}
 		rl.DrawLine(ox, oy, int32(obj.Target.X), int32(obj.Target.Y), color)
 	}
@@ -2927,7 +2920,7 @@ func (g *Game) DrawTargetLine(obj *GameObject) {
 // DrawBoundsRect draws the bounding box of an object (debug&4)
 func (g *Game) DrawBoundsRect(obj *GameObject) {
 	bx, by, bx2, by2 := obj.Bounds(nil, nil)
-	rl.DrawRectangleLines(int32(bx), int32(by), int32(bx2-bx+1), int32(by2-by+1), Pico8Colors[3])
+	rl.DrawRectangleLines(int32(bx), int32(by), int32(bx2-bx+1), int32(by2-by+1), PicoDarkGreen)
 }
 
 // DrawPathGrid draws the pathfinding grid with distance values (debug&8)
@@ -2943,7 +2936,7 @@ func (g *Game) DrawPathGrid() {
 		for j := 0; j < 20; j++ {
 			x := int32(g.CamX) + int32(i*TileSize)
 			y := int32(j * TileSize)
-			rl.DrawRectangleLines(x, y, TileSize, TileSize, Pico8Colors[1])
+			rl.DrawRectangleLines(x, y, TileSize, TileSize, PicoDarkBlue)
 
 			pathCol := camCol + i + 1 // 1-based, matches Lua: path[c+i]
 			if pathCol >= 1 && pathCol <= 32 && j+1 >= 1 && j+1 <= 20 {
@@ -2951,7 +2944,7 @@ func (g *Game) DrawPathGrid() {
 				if val < MaxN {
 					// Draw small number
 					txt := strconv.Itoa(val)
-					rl.DrawText(txt, x+1, y+1, 5, Pico8Colors[9])
+					rl.DrawText(txt, x+1, y+1, 5, PicoOrange)
 				}
 			}
 		}
@@ -3004,54 +2997,63 @@ func (g *Game) DrawExtraGrid(sx, sy, scale float32, n int) {
 		rl.DrawRectangleV(
 			rl.Vector2{X: sx + col*2*px, Y: sy + row*2*px},
 			rl.Vector2{X: px, Y: px},
-			rl.Orange,
+			PicoOrange,
 		)
 	}
 }
 
 var (
-	ColorOrange     = rl.Color{R: 255, G: 163, B: 0, A: 255} // PICO-8 color 9
-	ColorDarkOrange = rl.Color{R: 171, G: 82, B: 54, A: 255} // PICO-8 color 4
+	PicoBlack      = rl.Color{R: 0, G: 0, B: 0, A: 255}
+	PicoDarkBlue   = rl.Color{R: 29, G: 43, B: 83, A: 255}
+	PicoDarkPurple = rl.Color{R: 126, G: 37, B: 83, A: 255}
+	PicoDarkGreen  = rl.Color{R: 0, G: 135, B: 81, A: 255}
+	PicoBrown      = rl.Color{R: 171, G: 82, B: 54, A: 255}
+	PicoDarkGrey   = rl.Color{R: 95, G: 87, B: 79, A: 255}
+	PicoLightGrey  = rl.Color{R: 194, G: 195, B: 199, A: 255}
+	PicoWhite      = rl.Color{R: 255, G: 241, B: 232, A: 255}
+	PicoRed        = rl.Color{R: 255, G: 0, B: 77, A: 255}
+	PicoOrange     = rl.Color{R: 255, G: 163, B: 0, A: 255}
+	PicoYellow     = rl.Color{R: 255, G: 236, B: 39, A: 255}
+	PicoGreen      = rl.Color{R: 0, G: 228, B: 54, A: 255}
+	PicoBlue       = rl.Color{R: 41, G: 173, B: 255, A: 255}
+	PicoIndigo     = rl.Color{R: 131, G: 118, B: 156, A: 255}
+	PicoPink       = rl.Color{R: 255, G: 119, B: 168, A: 255}
+	PicoPeach      = rl.Color{R: 255, G: 204, B: 170, A: 255}
 
-	// PICO-8 color palette for debug drawing
+	// UI overlay colors
+	OverlayDim      = rl.Color{R: 0, G: 0, B: 0, A: 200}
+	OverlayDark     = rl.Color{R: 0, G: 0, B: 0, A: 220}
+	HighlightOrange = rl.Color{R: 255, G: 163, B: 0, A: 40}
+	SliderTrack     = rl.Color{R: 80, G: 80, B: 80, A: 255}
+
+	// Pico8Colors indexed palette for dynamic lookups
 	Pico8Colors = [16]rl.Color{
-		{R: 0, G: 0, B: 0, A: 255},       // 0: black
-		{R: 29, G: 43, B: 83, A: 255},    // 1: dark blue
-		{R: 126, G: 37, B: 83, A: 255},   // 2: dark purple
-		{R: 0, G: 135, B: 81, A: 255},    // 3: dark green
-		{R: 171, G: 82, B: 54, A: 255},   // 4: brown
-		{R: 95, G: 87, B: 79, A: 255},    // 5: dark grey
-		{R: 194, G: 195, B: 199, A: 255}, // 6: light grey
-		{R: 255, G: 241, B: 232, A: 255}, // 7: white
-		{R: 255, G: 0, B: 77, A: 255},    // 8: red
-		{R: 255, G: 163, B: 0, A: 255},   // 9: orange
-		{R: 255, G: 236, B: 39, A: 255},  // 10: yellow
-		{R: 0, G: 228, B: 54, A: 255},    // 11: green
-		{R: 41, G: 173, B: 255, A: 255},  // 12: blue
-		{R: 131, G: 118, B: 156, A: 255}, // 13: indigo
-		{R: 255, G: 119, B: 168, A: 255}, // 14: pink
-		{R: 255, G: 204, B: 170, A: 255}, // 15: peach
+		PicoBlack, PicoDarkBlue, PicoDarkPurple, PicoDarkGreen,
+		PicoBrown, PicoDarkGrey, PicoLightGrey, PicoWhite,
+		PicoRed, PicoOrange, PicoYellow, PicoGreen,
+		PicoBlue, PicoIndigo, PicoPink, PicoPeach,
 	}
 )
 
 // DrawUI draws the user interface in screen coordinates
 func (g *Game) DrawUI() {
 	scale := float32(g.WindowSize) / VisibleSize
-	color := ColorOrange
+	color := PicoOrange
 	if !g.Playing {
-		color = ColorDarkOrange
+		color = PicoBrown
 	}
 
 	// Score
 	fontSize := float32(TileSize) * scale
 	rl.DrawTextEx(g.Font, strconv.Itoa(g.Score), rl.Vector2{X: 2 * scale, Y: 0}, fontSize, 1, color)
 
-	// Hearts: sprites at x=20+i*8 for i=1..3, show heart (170) or heart2 (171)
+	// Hearts
+	heartSprite := g.Defs["heart"].Idle[0]
 	for i := 1; i <= 3; i++ {
 		x := float32(20 + i*8)
-		sprIdx := 171 // heart2 (empty)
+		sprIdx := heartSprite + 1 // empty heart
 		if i < g.HeartCount {
-			sprIdx = 170 // heart (full)
+			sprIdx = heartSprite
 		}
 		g.DrawSpriteUI(sprIdx, x, -1)
 	}
@@ -3062,22 +3064,24 @@ func (g *Game) DrawUI() {
 		rl.DrawCircle(int32(cx), int32(cy), 1.5*scale, rl.White)
 	}
 
-	// Bombs: sprite 236 at x=54+i*4 for i=1..min(bombcnt,3)
+	// Bombs
+	bombSprite := g.Defs["bomb"].Idle[0]
 	cnt := min(g.BombCount, 3)
 	for i := 1; i <= cnt; i++ {
 		x := float32(54 + i*4)
-		g.DrawSpriteUI(236, x, 0)
+		g.DrawSpriteUI(bombSprite, x, 0)
 	}
 	// Extra bombs as 3x3 grid of orange pixels
 	if g.BombCount > 3 {
 		g.DrawExtraGrid(float32(54+2+4*4)*scale, 1*scale, scale, min(g.BombCount-3, 9))
 	}
 
-	// Mines: sprite 2 at x=72+i*6 for i=1..min(minecnt,3)
+	// Mines
+	mineSprite := g.Defs["mine"].Idle[0]
 	cnt = min(g.MineCount, 3)
 	for i := 1; i <= cnt; i++ {
 		x := float32(72 + i*6)
-		g.DrawSpriteUI(2, x, 0)
+		g.DrawSpriteUI(mineSprite, x, 0)
 	}
 	// Extra mines as 3x3 grid of orange pixels
 	if g.MineCount > 3 {
@@ -3097,7 +3101,7 @@ func (g *Game) DrawUI() {
 		rl.DrawTextEx(g.Font, info, rl.Vector2{X: 80 * scale, Y: 9 * scale}, smallFont, 1, color)
 		// Show debug message at bottom of screen
 		if g.DebugMsg != "" {
-			rl.DrawTextEx(g.Font, g.DebugMsg, rl.Vector2{X: 2 * scale, Y: 120 * scale}, smallFont, 1, Pico8Colors[8])
+			rl.DrawTextEx(g.Font, g.DebugMsg, rl.Vector2{X: 2 * scale, Y: 120 * scale}, smallFont, 1, PicoRed)
 		}
 		// Show FPS
 		fpsText := fmt.Sprintf("fps:%d", rl.GetFPS())
@@ -3110,18 +3114,18 @@ func (g *Game) DrawGameOver() {
 	centerX := g.WindowSize/2 + 48
 	centerY := g.WindowSize/2 - 48
 
-	if g.Win() {
+	if g.Won {
 		rl.DrawTextEx(g.Font, "SAFE!", rl.Vector2{X: float32(centerX - 100), Y: float32(centerY - 40)}, 80, 2, rl.Green)
 	} else {
 		rl.DrawTextEx(g.Font, "GAME OVER", rl.Vector2{X: float32(centerX - 200), Y: float32(centerY - 40)}, 80, 2, rl.Red)
 	}
 
-	rl.DrawTextEx(g.Font, fmt.Sprintf("Score: %d", g.Score), rl.Vector2{X: float32(centerX - 120), Y: float32(centerY + 60)}, 40, 2, ColorOrange)
-	rl.DrawTextEx(g.Font, fmt.Sprintf("High Score: %d", g.HighScore), rl.Vector2{X: float32(centerX - 160), Y: float32(centerY + 120)}, 40, 2, ColorOrange)
-	if g.Win() {
-		rl.DrawTextEx(g.Font, "Press X to continue", rl.Vector2{X: float32(centerX - 280), Y: float32(centerY + 200)}, 40, 2, ColorDarkOrange)
+	rl.DrawTextEx(g.Font, fmt.Sprintf("Score: %d", g.Score), rl.Vector2{X: float32(centerX - 120), Y: float32(centerY + 60)}, 40, 2, PicoOrange)
+	rl.DrawTextEx(g.Font, fmt.Sprintf("High Score: %d", g.HighScore), rl.Vector2{X: float32(centerX - 160), Y: float32(centerY + 120)}, 40, 2, PicoOrange)
+	if g.Won {
+		rl.DrawTextEx(g.Font, "Press X to continue", rl.Vector2{X: float32(centerX - 280), Y: float32(centerY + 200)}, 40, 2, PicoBrown)
 	} else {
-		rl.DrawTextEx(g.Font, "Press X to play again", rl.Vector2{X: float32(centerX - 280), Y: float32(centerY + 200)}, 40, 2, ColorDarkOrange)
+		rl.DrawTextEx(g.Font, "Press X to play again", rl.Vector2{X: float32(centerX - 280), Y: float32(centerY + 200)}, 40, 2, PicoBrown)
 	}
 }
 

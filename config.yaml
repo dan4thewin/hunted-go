@@ -8,6 +8,9 @@ assets:
 
 config:
   threat_max_start: 1.375
+  heart_count: 4
+  bomb_count: 3
+  mine_count: 3
 
 tiles:
   black_tile: 9
