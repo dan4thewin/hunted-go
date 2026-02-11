@@ -295,6 +295,7 @@ type Game struct {
 	StartMines     int
 	Assets         AssetsConfig
 	SoundPaths     SoundsConfig
+	GameConfig     // tunable params
 
 	Audio      // music and sound effects
 	Render     // graphics resources
@@ -572,6 +573,40 @@ type GameConfig struct {
 	HeartCount     int     `yaml:"heart_count"`
 	BombCount      int     `yaml:"bomb_count"`
 	MineCount      int     `yaml:"mine_count"`
+
+	ThreatMaxInc float64 `yaml:"threat_max_inc"`
+	ThreatStep   float64 `yaml:"threat_step"`
+	ThreatCapHi  float64 `yaml:"threat_cap_hi"`
+	ThreatCapLo  float64 `yaml:"threat_cap_lo"`
+	ThreatSpeedX float64 `yaml:"threat_speed_x"`
+
+	RespawnF     int     `yaml:"respawn_f"`
+	RespawnPct   float64 `yaml:"respawn_pct"`
+	WaifSpawnF   int     `yaml:"waif_spawn_f"`
+	WaifSpawnPct float64 `yaml:"waif_spawn_pct"`
+	WaifLevelPct float64 `yaml:"waif_level_pct"`
+
+	ThugScoreX    int `yaml:"thug_score_x"`
+	WaifPenaltyX  int `yaml:"waif_penalty_x"`
+	WaifSafeScore int `yaml:"waif_safe_score"`
+
+	SpeedDecayPxf float64 `yaml:"speed_decay_pxf"`
+	RelaxedSpeedX float64 `yaml:"relaxed_speed_x"`
+	CameraMaxPxf  float64 `yaml:"camera_max_pxf"`
+
+	WaifDelayF   int     `yaml:"waif_delay_f"`
+	WaifFollowPx float64 `yaml:"waif_follow_px"`
+	WaifJitterPx int     `yaml:"waif_jitter_px"`
+	WaifJitterF  int     `yaml:"waif_jitter_f"`
+
+	RespiteF   int     `yaml:"respite_f"`
+	ShakeDecay float64 `yaml:"shake_decay"`
+	PingMaxPx  float64 `yaml:"ping_max_px"`
+	ThugReapPx float64 `yaml:"thug_reap_px"`
+
+	CratePct float64 `yaml:"crate_pct"`
+	RockPct  float64 `yaml:"rock_pct"`
+	JunkPct  float64 `yaml:"junk_pct"`
 }
 
 // TilesConfig holds tile map layout and parameters
@@ -693,6 +728,7 @@ func (g *Game) LoadConfig(filename string) error {
 	g.SoundPaths = cfg.Sounds
 
 	// Store config values
+	g.GameConfig = cfg.Config
 	g.ThreatMaxStart = cfg.Config.ThreatMaxStart
 	g.ThreatMax = cfg.Config.ThreatMaxStart
 	g.StartHearts = cfg.Config.HeartCount
@@ -1096,9 +1132,9 @@ func (g *Game) Crunch(p *GameObject) bool {
 	if g.Playing && p.Speed > 0 {
 		switch p.Kind {
 		case Thug:
-			g.Score += int(p.Speed * 200)
+			g.Score += int(p.Speed * float64(g.ThugScoreX))
 		case Waif:
-			g.Score -= int(p.Speed * 200)
+			g.Score -= int(p.Speed * float64(g.WaifPenaltyX))
 		}
 	}
 	if (p.Kind == Thug && p.Y >= TopEdge && p.Y <= BottomEdge) || (p.Kind == Player && g.HeartCount == 0) || p.Kind == Waif {
@@ -1384,13 +1420,13 @@ func (g *Game) Act(p *GameObject) bool {
 	}
 
 	if dir == 0 {
-		p.Speed = max(0, p.Speed-0.05)
+		p.Speed = max(0, p.Speed-g.SpeedDecayPxf)
 	} else {
 		base := p.BaseSpeed
 		if p.Kind == Thug && g.Mode == 2 {
-			base *= 0.5
+			base *= g.RelaxedSpeedX
 		}
-		p.Speed = max(base, p.Speed-0.05)
+		p.Speed = max(base, p.Speed-g.SpeedDecayPxf)
 
 		switch dir & (DirLeft | DirRight) {
 		case DirLeft:
@@ -1461,7 +1497,7 @@ func (g *Game) UpdatePings() {
 	newPings := g.Pings[:0]
 	for _, p := range g.Pings {
 		p.Radius += 2
-		if p.Radius <= 80 {
+		if p.Radius <= g.PingMaxPx {
 			newPings = append(newPings, p)
 		}
 	}
@@ -1675,9 +1711,9 @@ func FollowPath(g *Game, p *GameObject) int {
 	// If very close to player (pmin <= 1), add jitter to avoid stacking on player
 	if pmin <= 1 {
 		if p.JitterTime == 0 {
-			p.JitterX = float64(g.Rng.Intn(13) - 6)
-			p.JitterY = float64(g.Rng.Intn(13) - 6)
-			p.JitterTime = 120
+			p.JitterX = float64(g.Rng.Intn(g.WaifJitterPx*2+1) - g.WaifJitterPx)
+			p.JitterY = float64(g.Rng.Intn(g.WaifJitterPx*2+1) - g.WaifJitterPx)
+			p.JitterTime = g.WaifJitterF
 		} else {
 			p.JitterTime--
 		}
@@ -1721,13 +1757,13 @@ func PlayerPostMove(g *Game, p *GameObject) {
 // WaifPostMove handles waif post-movement
 func WaifPostMove(g *Game, p *GameObject) {
 	if p.X > FinishLine && !p.Scored && (g.Playing || g.Won) {
-		g.Score += 100
+		g.Score += g.WaifSafeScore
 		p.Scored = true
 		p.Ignore = true
 		g.PlaySfx(g.SndSafe, "safe")
 	} else if p.X > XMax {
 		g.Reap(p)
-	} else if g.Player != nil && Distance(p, g.Player) < 40 && g.Player.Speed > 0 {
+	} else if g.Player != nil && Distance(p, g.Player) < g.WaifFollowPx && g.Player.Speed > 0 {
 		p.Speed = g.Player.Speed
 	}
 }
@@ -1765,7 +1801,7 @@ func (g *Game) ReapCrumb() {
 // Spawn creates a new thug
 func (g *Game) Spawn(def *SpriteDef, x, y float64, factor float64) bool {
 	t := def.Speed
-	s := (def.Speed - (def.Speed / (g.ThreatMax * 0.8)))
+	s := (def.Speed - (def.Speed / (g.ThreatMax * g.ThreatSpeedX)))
 
 	if g.Threat+t > g.ThreatMax*factor {
 		return false
@@ -1806,7 +1842,7 @@ func (g *Game) SpawnWaif() {
 		obj.JitterTime = 0
 		obj.Controller = FollowPath
 		obj.PostMove = WaifPostMove
-		obj.Delay = 60
+		obj.Delay = g.WaifDelayF
 		obj.PreAct = SlowStart
 	})
 
@@ -1917,11 +1953,11 @@ func (g *Game) Populate(x float64, factor float64) {
 			}
 			if !added && r > 1 && r < 18 {
 				n := g.Rng.Float64() * 100
-				if n < 0.5 {
+				if n < g.CratePct {
 					g.Emplace(g.Defs["crate"], float64(c*TileSize), float64(r*TileSize))
-				} else if n < 1 {
+				} else if n < g.CratePct+g.RockPct {
 					g.TileMap[r][c] = g.RockTile
-				} else if n < 1.5 {
+				} else if n < g.CratePct+g.RockPct+g.JunkPct {
 					g.Emplace(g.Defs["junk"], float64(c*TileSize), float64(r*TileSize))
 				}
 			}
@@ -2142,10 +2178,10 @@ func (g *Game) updateThreatSlider(mouse rl.Vector2) {
 
 	// Keyboard
 	if rl.IsKeyPressed(rl.KeyRight) {
-		g.ThreatMax = min(g.ThreatMax+0.25, 10.0)
+		g.ThreatMax = min(g.ThreatMax+g.ThreatStep, g.ThreatCapHi)
 	}
 	if rl.IsKeyPressed(rl.KeyLeft) {
-		g.ThreatMax = max(g.ThreatMax-0.25, 0.5)
+		g.ThreatMax = max(g.ThreatMax-g.ThreatStep, g.ThreatCapLo)
 	}
 
 	// Mouse drag on slider
@@ -2153,8 +2189,8 @@ func (g *Game) updateThreatSlider(mouse rl.Vector2) {
 		if mouse.Y >= float32(sliderY) && mouse.Y < float32(sliderY+sliderH) &&
 			mouse.X >= float32(sliderX) && mouse.X <= float32(sliderX+sliderW) {
 			raw := float64(mouse.X-float32(sliderX)) / float64(sliderW)
-			g.ThreatMax = 0.5 + raw*9.5 // 0.5 to 10.0
-			g.ThreatMax = max(0.5, min(10.0, g.ThreatMax))
+			g.ThreatMax = g.ThreatCapLo + raw*(g.ThreatCapHi-g.ThreatCapLo)
+			g.ThreatMax = max(g.ThreatCapLo, min(g.ThreatCapHi, g.ThreatMax))
 		}
 	}
 }
@@ -2351,7 +2387,7 @@ func (g *Game) UpdatePlaying() {
 		targetCamX = max(0, min(targetCamX-math.Mod(targetCamX, ScrollWidth), FinalScreen))
 		g.Populate(targetCamX, 2)
 		diff := targetCamX - g.CamX
-		g.CamX += max(-2, min(2, diff))
+		g.CamX += max(-g.CameraMaxPxf, min(g.CameraMaxPxf, diff))
 	}
 
 	// Check game over
@@ -2391,7 +2427,7 @@ func (g *Game) StepSimulation() {
 		px := g.Player.X
 		for i := len(g.Objects) - 1; i >= 0; i-- {
 			obj := g.Objects[i]
-			if obj.Kind == Thug && px-obj.X > 120 {
+			if obj.Kind == Thug && px-obj.X > g.ThugReapPx {
 				g.ThugCount--
 				g.Threat -= obj.Threat
 				g.Objects = slices.Delete(g.Objects, i, i+1)
@@ -2401,13 +2437,13 @@ func (g *Game) StepSimulation() {
 
 	g.Tick++
 
-	if g.Tick%200 == 0 {
+	if g.Tick%g.RespawnF == 0 {
 		g.ReapCrumb()
 	}
-	if g.Tick%402 == 0 && g.CamX < FinalScreen && g.Rng.Float64() > 0.75-float64(g.Level)*0.05 {
+	if g.Tick%g.WaifSpawnF == 0 && g.CamX < FinalScreen && g.Rng.Float64()*100 < g.WaifSpawnPct+float64(g.Level)*g.WaifLevelPct {
 		g.SpawnWaif()
 	}
-	if g.Tick%200 == 0 && g.Rng.Float64() > 0.75 {
+	if g.Tick%g.RespawnF == 0 && g.Rng.Float64()*100 < g.RespawnPct {
 		g.Log("respawn", nil)
 		g.Respawn()
 	}
@@ -2420,7 +2456,7 @@ func (g *Game) StepSimulation() {
 // UpdateShake updates screen shake
 func (g *Game) UpdateShake() {
 	if g.ShakeFactor > 0 {
-		g.ShakeFactor = max(0, g.ShakeFactor-0.05)
+		g.ShakeFactor = max(0, g.ShakeFactor-g.ShakeDecay)
 	}
 }
 
@@ -2431,7 +2467,7 @@ func (g *Game) StartGame() {
 	g.State = StatePlaying
 	g.Playing = true
 	g.Won = false
-	g.Respite = 90
+	g.Respite = g.RespiteF
 	g.CamX = 0
 	g.CamY = 16
 	g.ShakeFactor = 0
@@ -2454,7 +2490,7 @@ func (g *Game) StartGame() {
 
 	if won {
 		// Continue: preserve score, bombs, mines, hearts; increase difficulty
-		g.ThreatMax += 0.125
+		g.ThreatMax += g.ThreatMaxInc
 		g.Level++
 	} else {
 		// Game over: reset everything
@@ -2688,7 +2724,7 @@ func (g *Game) DrawOptions() {
 			rl.DrawTextEx(g.Font, "Threat", rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
 			sx, sy, sw, sh := g.threatSliderRect()
 			rl.DrawRectangle(sx, sy, sw, sh, SliderTrack)
-			frac := float32((g.ThreatMax - 0.5) / 9.5)
+			frac := float32((g.ThreatMax - g.ThreatCapLo) / (g.ThreatCapHi - g.ThreatCapLo))
 			fillW := int32(float32(sw) * frac)
 			rl.DrawRectangle(sx, sy, fillW, sh, valueColor)
 			knobX := sx + fillW

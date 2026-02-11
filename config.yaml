@@ -12,6 +12,47 @@ config:
   bomb_count: 3
   mine_count: 3
 
+  # threat / difficulty
+  threat_max_inc: 0.125      # added on continue
+  threat_step: 0.25          # slider adjustment per press
+  threat_cap_hi: 10.0
+  threat_cap_lo: 0.5
+  threat_speed_x: 0.8        # ThreatMax fraction for spawn speed
+
+  # spawn intervals and probabilities
+  respawn_f: 200
+  respawn_pct: 25
+  waif_spawn_f: 402
+  waif_spawn_pct: 25
+  waif_level_pct: 5          # added to chance per level
+
+  # score
+  thug_score_x: 200          # per-kill score = speed × this
+  waif_penalty_x: 200
+  waif_safe_score: 100
+
+  # movement
+  speed_decay_pxf: 0.05      # deceleration per frame
+  relaxed_speed_x: 0.5       # thug speed multiplier in easy mode
+  camera_max_pxf: 2
+
+  # waif behavior
+  waif_delay_f: 60           # movement delay after spawn
+  waif_follow_px: 40         # distance to speed-match player
+  waif_jitter_px: 6          # random offset amplitude
+  waif_jitter_f: 120         # jitter reset interval
+
+  # effects
+  respite_f: 90              # delay before game-over screen
+  shake_decay: 0.05
+  ping_max_px: 80
+  thug_reap_px: 120          # off-screen cleanup distance
+
+  # spawn probabilities
+  crate_pct: 0.5
+  rock_pct: 1.0
+  junk_pct: 1.5
+
 tiles:
   black_tile: 9
   rock_tile: 241
