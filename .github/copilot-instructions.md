@@ -1,5 +1,7 @@
 Use short, concise commit messages.
 
+As the codebase evolves, frequently suggest brief updates to the architecture notes below so they stay current. Propose changes early and often—small, incremental updates are easier to review than large rewrites.
+
 ## Architecture notes
 
 - **config.yaml is the single source of truth** for sprites, tiles, assets, sounds, and the thug roster. It replaced both hardcoded Go constants and the old map.yaml.
