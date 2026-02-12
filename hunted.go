@@ -1291,125 +1291,138 @@ func (g *Game) MobCollide(p *GameObject, x, y float64) *GameObject {
 
 // Walk moves an object in a direction
 func (g *Game) Walk(p *GameObject, dir int) bool {
-	var x, y float64
-	switch dir {
-	case DirLeft:
-		x = -1
-	case DirRight:
-		x = 1
-	case DirUp:
-		y = -1
-	case DirDown:
-		y = 1
-	case DirLeft | DirUp:
-		x, y = -0.7, -0.7
-	case DirRight | DirUp:
-		x, y = 0.7, -0.7
-	case DirLeft | DirDown:
-		x, y = -0.7, 0.7
-	case DirRight | DirDown:
-		x, y = 0.7, 0.7
-	default:
-		return false
-	}
+	return g.walk(p, dir, false)
+}
 
-	if x != 0 && y != 0 {
-		if !p.Diag {
-			// Snap away from movement direction
-			snapX, snapY := math.Floor, math.Floor
-			if x < 0 {
-				snapX = math.Ceil
-			}
-			if y < 0 {
-				snapY = math.Ceil
-			}
-			p.X = snapX(p.X)
-			p.Y = snapY(p.Y)
-			p.Diag = true
+func (g *Game) walk(p *GameObject, dir int, slide bool) bool {
+	for attempt := 0; ; attempt++ {
+		var x, y float64
+		switch dir {
+		case DirLeft:
+			x = -1
+		case DirRight:
+			x = 1
+		case DirUp:
+			y = -1
+		case DirDown:
+			y = 1
+		case DirLeft | DirUp:
+			x, y = -0.7, -0.7
+		case DirRight | DirUp:
+			x, y = 0.7, -0.7
+		case DirLeft | DirDown:
+			x, y = -0.7, 0.7
+		case DirRight | DirDown:
+			x, y = 0.7, 0.7
+		default:
+			return false
 		}
-	} else {
-		p.Diag = false
-	}
 
-	lx, ly := p.X, p.Y
-	s := p.Speed
-
-	// Using Go 1.25 builtin min/max
-	ny := max(float64(p.YMin), min(ly+y*s, float64(p.YMax)))
-	nx := max(0, min(lx+x*s, float64(p.XMaxLimit)))
-
-	if p.Bounce && g.Obstacle(p, 0, 0, &nx, &ny) {
-		lr := dir & (DirLeft | DirRight)
-		ud := dir & (DirUp | DirDown)
-		if !p.Diag {
-			switch lr {
-			case DirLeft:
-				lr = DirRight
-			case DirRight:
-				lr = DirLeft
+		if x != 0 && y != 0 {
+			if !p.Diag {
+				// Snap away from movement direction
+				snapX, snapY := math.Floor, math.Floor
+				if x < 0 {
+					snapX = math.Ceil
+				}
+				if y < 0 {
+					snapY = math.Ceil
+				}
+				p.X = snapX(p.X)
+				p.Y = snapY(p.Y)
+				p.Diag = true
 			}
-			switch ud {
-			case DirUp:
-				ud = DirDown
-			case DirDown:
-				ud = DirUp
+		} else {
+			p.Diag = false
+		}
+
+		lx, ly := p.X, p.Y
+		s := p.Speed
+
+		// Using Go 1.25 builtin min/max
+		ny := max(float64(p.YMin), min(ly+y*s, float64(p.YMax)))
+		nx := max(0, min(lx+x*s, float64(p.XMaxLimit)))
+
+		if p.Bounce && g.Obstacle(p, 0, 0, &nx, &ny) {
+			if attempt > 0 {
+				// Already bounced once — stop to avoid infinite loop
+				return false
 			}
-		} else if g.Obstacle(p, 0, 0, &lx, &ny) {
-			switch ud {
-			case DirUp:
-				ud = DirDown
-			case DirDown:
-				ud = DirUp
+			lr := dir & (DirLeft | DirRight)
+			ud := dir & (DirUp | DirDown)
+			if !p.Diag {
+				switch lr {
+				case DirLeft:
+					lr = DirRight
+				case DirRight:
+					lr = DirLeft
+				}
+				switch ud {
+				case DirUp:
+					ud = DirDown
+				case DirDown:
+					ud = DirUp
+				}
+			} else if g.Obstacle(p, 0, 0, &lx, &ny) {
+				switch ud {
+				case DirUp:
+					ud = DirDown
+				case DirDown:
+					ud = DirUp
+				}
+			} else if g.Obstacle(p, 0, 0, &nx, &ly) {
+				switch lr {
+				case DirLeft:
+					lr = DirRight
+				case DirRight:
+					lr = DirLeft
+				}
 			}
-		} else if g.Obstacle(p, 0, 0, &nx, &ly) {
-			switch lr {
-			case DirLeft:
-				lr = DirRight
-			case DirRight:
-				lr = DirLeft
+			dir = lr | ud
+			p.Dir = dir
+			continue // retry with bounced direction
+		}
+
+		// Slide around corners (disabled on recursive slide calls)
+		if !slide {
+			if y != 0 && g.Obstacle(p, 0, 0, &lx, &ny) {
+				testX := lx + 3
+				if x == 0 && !g.Obstacle(p, 0, 0, &testX, &ny) {
+					return g.walk(p, DirRight, true)
+				}
+				testX = lx - 3
+				if x == 0 && !g.Obstacle(p, 0, 0, &testX, &ny) {
+					return g.walk(p, DirLeft, true)
+				}
+				ny = ly
+			}
+			if x != 0 && g.Obstacle(p, 0, 0, &nx, &ly) {
+				testY := ly + 3
+				if y == 0 && !g.Obstacle(p, 0, 0, &nx, &testY) {
+					return g.walk(p, DirDown, true)
+				}
+				testY = ly - 3
+				if y == 0 && !g.Obstacle(p, 0, 0, &nx, &testY) {
+					return g.walk(p, DirUp, true)
+				}
+				nx = lx
 			}
 		}
-		p.Dir = lr | ud
-		return g.Walk(p, p.Dir)
-	}
 
-	// Slide around corners
-	if y != 0 && g.Obstacle(p, 0, 0, &lx, &ny) {
-		testX := lx + 3
-		if x == 0 && !g.Obstacle(p, 0, 0, &testX, &ny) {
-			return g.Walk(p, DirRight)
+		if nx == lx && ny == ly {
+			g.Log("blocked", p)
+			return false
 		}
-		testX = lx - 3
-		if x == 0 && !g.Obstacle(p, 0, 0, &testX, &ny) {
-			return g.Walk(p, DirLeft)
-		}
-		ny = ly
-	}
-	if x != 0 && g.Obstacle(p, 0, 0, &nx, &ly) {
-		testY := ly + 3
-		if y == 0 && !g.Obstacle(p, 0, 0, &nx, &testY) {
-			return g.Walk(p, DirDown)
-		}
-		testY = ly - 3
-		if y == 0 && !g.Obstacle(p, 0, 0, &nx, &testY) {
-			return g.Walk(p, DirUp)
-		}
-		nx = lx
-	}
 
-	if nx == lx && ny == ly {
-		g.Log("blocked", p)
-		return false
-	}
+		q := g.MobCollide(p, nx, ny)
+		if q != nil {
+			//g.Log(fmt.Sprintf("bumped %s%d", q.Name, q.ID), p)
+			return false
+		}
 
-	q := g.MobCollide(p, nx, ny)
-	if q != nil {
-		//g.Log(fmt.Sprintf("bumped %s%d", q.Name, q.ID), p)
-		return false
+		p.X, p.Y = nx, ny
+		return true
 	}
-
-	p.X, p.Y = nx, ny
-	return true
 }
 
 // Act performs one tick of object behavior
