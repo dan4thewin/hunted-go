@@ -287,7 +287,13 @@ type Game struct {
 	Path [][]int
 
 	// Configuration from config.yaml
-	Defs           map[string]*SpriteDef
+	DefPlayer      *SpriteDef
+	DefWaif        *SpriteDef
+	DefBomb        *SpriteDef
+	DefMine        *SpriteDef
+	DefCrate       *SpriteDef
+	DefJunk        *SpriteDef
+	DefHeart       *SpriteDef
 	Thugs          []*SpriteDef
 	ThreatMaxStart float64
 	StartHearts    int
@@ -763,24 +769,33 @@ func (g *Game) LoadConfig(filename string) error {
 		}
 	}
 
-	// Parse sprite definitions
-	g.Defs = make(map[string]*SpriteDef, len(cfg.Sprites))
+	// Parse sprite definitions into a local map for resolution
+	defs := make(map[string]*SpriteDef, len(cfg.Sprites))
 	for key, ydef := range cfg.Sprites {
-		g.Defs[key] = ydef.toSpriteDef(key)
+		defs[key] = ydef.toSpriteDef(key)
 	}
 
 	// Resolve Final references for sprites
-	for key, def := range g.Defs {
+	for key, def := range defs {
 		if f := cfg.Sprites[key].Final; f != "" {
-			def.Final = g.Defs[f]
+			def.Final = defs[f]
 		}
 	}
 
 	// Build thug list from sprite references
 	g.Thugs = make([]*SpriteDef, len(cfg.Thugs))
 	for i, name := range cfg.Thugs {
-		g.Thugs[i] = g.Defs[name]
+		g.Thugs[i] = defs[name]
 	}
+
+	// Resolve named defs used at runtime
+	g.DefPlayer = defs["player"]
+	g.DefWaif = defs["waif"]
+	g.DefBomb = defs["bomb"]
+	g.DefMine = defs["mine"]
+	g.DefCrate = defs["crate"]
+	g.DefJunk = defs["junk"]
+	g.DefHeart = defs["heart"]
 
 	return nil
 }
@@ -863,7 +878,7 @@ func (g *Game) Emplace(def *SpriteDef, x, y float64, opts ...func(*GameObject)) 
 	}
 
 	// Junk lingers with random duration: min 6 + random up to 240 frames (60fps)
-	if def == g.Defs["junk"] && obj.FrameFunc == nil {
+	if def == g.DefJunk && obj.FrameFunc == nil {
 		obj.FrameFunc = func(o *GameObject) {
 			o.CurrentFrames = max(6, g.Rng.Intn(240))
 		}
@@ -1087,7 +1102,7 @@ func PlayerInput(g *Game, p *GameObject) int {
 func (g *Game) PlaceMine(p *GameObject) {
 	if g.MineCount > 0 {
 		g.MineCount--
-		g.Emplace(g.Defs["mine"], p.X, p.Y, func(obj *GameObject) {
+		g.Emplace(g.DefMine, p.X, p.Y, func(obj *GameObject) {
 			obj.FrameFunc = func(o *GameObject) {
 				if !o.Armed {
 					o.Armed = true
@@ -1103,7 +1118,7 @@ func (g *Game) PlaceMine(p *GameObject) {
 func (g *Game) ThrowBomb(p *GameObject) {
 	if g.BombCount > 0 {
 		g.BombCount--
-		g.Emplace(g.Defs["bomb"], p.X, p.Y, func(obj *GameObject) {
+		g.Emplace(g.DefBomb, p.X, p.Y, func(obj *GameObject) {
 			obj.Dir = p.LastDir
 			obj.FrameFunc = func(o *GameObject) {
 				if !o.Armed {
@@ -1150,7 +1165,7 @@ func (g *Game) Crunch(p *GameObject) bool {
 			obj.PalSwap = p.PalSwap
 		})
 		// Play crunch for dead bodies (not junk-producing deaths)
-		if p.Final != g.Defs["junk"] {
+		if p.Final != g.DefJunk {
 			g.PlaySfx(g.SndCrunch, "crunch")
 		}
 		return true
@@ -1864,7 +1879,7 @@ func (g *Game) SpawnWaif() {
 	g.MakePing(x, y, rl.White)
 
 	palIndex := g.Rng.Intn(3)
-	g.Emplace(g.Defs["waif"], x, y, func(obj *GameObject) {
+	g.Emplace(g.DefWaif, x, y, func(obj *GameObject) {
 		obj.PalIndex = palIndex
 		obj.PalSwap = true
 		obj.JitterTime = 0
@@ -1982,11 +1997,11 @@ func (g *Game) Populate(x float64, factor float64) {
 			if !added && r > 1 && r < 18 {
 				n := g.Rng.Float64() * 100
 				if n < g.CratePct {
-					g.Emplace(g.Defs["crate"], float64(c*TileSize), float64(r*TileSize))
+					g.Emplace(g.DefCrate, float64(c*TileSize), float64(r*TileSize))
 				} else if n < g.CratePct+g.RockPct {
 					g.TileMap[r][c] = g.RockTile
 				} else if n < g.CratePct+g.RockPct+g.JunkPct {
-					g.Emplace(g.Defs["junk"], float64(c*TileSize), float64(r*TileSize))
+					g.Emplace(g.DefJunk, float64(c*TileSize), float64(r*TileSize))
 				}
 			}
 		}
@@ -2546,7 +2561,7 @@ func (g *Game) StartGame() {
 	}
 
 	// Create player
-	g.Player = g.Emplace(g.Defs["player"], 64, 80, func(obj *GameObject) {
+	g.Player = g.Emplace(g.DefPlayer, 64, 80, func(obj *GameObject) {
 		obj.PathC = -1
 		obj.PathR = -1
 		obj.Controller = PlayerInput
@@ -3112,7 +3127,7 @@ func (g *Game) DrawUI() {
 	rl.DrawTextEx(g.Font, strconv.Itoa(g.Score), rl.Vector2{X: 2 * scale, Y: 0}, fontSize, 1, color)
 
 	// Hearts
-	heartSprite := g.Defs["heart"].Idle[0]
+	heartSprite := g.DefHeart.Idle[0]
 	for i := 1; i <= 3; i++ {
 		x := float32(20 + i*8)
 		sprIdx := heartSprite + 1 // empty heart
@@ -3129,7 +3144,7 @@ func (g *Game) DrawUI() {
 	}
 
 	// Bombs
-	bombSprite := g.Defs["bomb"].Idle[0]
+	bombSprite := g.DefBomb.Idle[0]
 	cnt := min(g.BombCount, 3)
 	for i := 1; i <= cnt; i++ {
 		x := float32(54 + i*4)
@@ -3141,7 +3156,7 @@ func (g *Game) DrawUI() {
 	}
 
 	// Mines
-	mineSprite := g.Defs["mine"].Idle[0]
+	mineSprite := g.DefMine.Idle[0]
 	cnt = min(g.MineCount, 3)
 	for i := 1; i <= cnt; i++ {
 		x := float32(72 + i*6)
