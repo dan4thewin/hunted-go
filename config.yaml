@@ -112,31 +112,18 @@ sprites:
     y_off: 2
     height: 4
     final: empty
-  livebomb:
+  bomb:
     idle: [236]
     idle_frames: 6
     speed: 1.5
-    poses: [236]
-    frames: 14
+    poses: [236, 236, 236]
+    frames: 7
     x_off: 3
     width: 2
     y_off: 3
     height: 2
     decay: true
     final: boom
-    bounce: true
-  bomb:
-    idle: [236]
-    idle_frames: 6
-    speed: 1.5
-    poses: [236]
-    frames: 6
-    x_off: 3
-    width: 2
-    y_off: 3
-    height: 2
-    decay: true
-    final: livebomb
     ignore: true
     bounce: true
   crate:

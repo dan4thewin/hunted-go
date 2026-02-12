@@ -1105,6 +1105,13 @@ func (g *Game) ThrowBomb(p *GameObject) {
 		g.BombCount--
 		g.Emplace(g.Defs["bomb"], p.X, p.Y, func(obj *GameObject) {
 			obj.Dir = p.LastDir
+			obj.FrameFunc = func(o *GameObject) {
+				if !o.Armed {
+					o.Armed = true
+				} else {
+					o.Ignore = false
+				}
+			}
 		})
 		g.PlaySfx(g.SndThrow, "throw")
 	}
