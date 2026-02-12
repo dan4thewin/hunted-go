@@ -1308,8 +1308,16 @@ func (g *Game) Walk(p *GameObject, dir int) bool {
 
 	if x != 0 && y != 0 {
 		if !p.Diag {
-			p.X = math.Floor(p.X)
-			p.Y = math.Floor(p.Y)
+			// Snap away from movement direction
+			snapX, snapY := math.Floor, math.Floor
+			if x < 0 {
+				snapX = math.Ceil
+			}
+			if y < 0 {
+				snapY = math.Ceil
+			}
+			p.X = snapX(p.X)
+			p.Y = snapY(p.Y)
 			p.Diag = true
 		}
 	} else {
