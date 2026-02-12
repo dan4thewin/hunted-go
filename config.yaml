@@ -7,13 +7,13 @@ assets:
   music_dir: music
 
 config:
-  threat_max_start: 1.375
   heart_count: 4
   bomb_count: 3
   mine_count: 3
 
   # threat / difficulty
-  threat_max_inc: 0.125      # added on continue
+  threat_max_start: 1.5
+  threat_max_inc: 0.25       # added on continue
   threat_step: 0.25          # slider adjustment per press
   threat_cap_hi: 10.0
   threat_cap_lo: 0.5
@@ -181,7 +181,7 @@ sprites:
     kind: waif
   # Thugs and their death sprites
   mech:
-    speed: 0.1
+    speed: 0.2
     idle: [28]
     poses: [28, 30]
     frames: 12
@@ -192,7 +192,7 @@ sprites:
     height: 13
     kind: thug
   pinkie:
-    speed: 0.25
+    speed: 0.5
     idle: [32]
     poses: [33, 34]
     frames: 12
@@ -201,7 +201,7 @@ sprites:
     width: 4
     kind: thug
   chomper:
-    speed: 0.25
+    speed: 0.5
     idle: [35, 36, 37]
     idle_frames: 12
     poses: [51, 52, 53, 67, 68, 69]
@@ -216,7 +216,7 @@ sprites:
     decay: true
     linger: true
   icedevil:
-    speed: 0.3
+    speed: 0.6
     idle: [38, 39, 40]
     idle_frames: 12
     poses: [54, 55, 56, 70, 71, 72]
@@ -231,28 +231,28 @@ sprites:
     decay: true
     linger: true
   zoid:
-    speed: 0.125
+    speed: 0.25
     idle: [48]
     poses: [49, 50]
     frames: 12
     final: junk
     kind: thug
   jazzy:
-    speed: 0.25
+    speed: 0.5
     idle: [64]
     poses: [65, 66]
     frames: 12
     final: junk
     kind: thug
   stretch:
-    speed: 0.3
+    speed: 0.6
     idle: [80]
     poses: [81, 82, 96, 97, 98, 112, 113, 114, 80]
     frames: 6
     final: junk
     kind: thug
   crabby:
-    speed: 0.25
+    speed: 0.5
     idle: [99, 100, 101]
     idle_frames: 12
     poses: [115, 116, 117]
@@ -269,7 +269,7 @@ sprites:
     decay: true
     linger: true
   sluggy:
-    speed: 0.05
+    speed: 0.1
     idle: [102, 103, 104]
     idle_frames: 12
     poses: [118, 119, 120]
@@ -287,7 +287,7 @@ sprites:
     ignore: true
     decay: true
   froggy:
-    speed: 0.25
+    speed: 0.5
     idle: [128, 129, 130]
     idle_frames: 12
     poses: [144, 145, 146]
@@ -306,7 +306,7 @@ sprites:
     decay: true
     linger: true
   batty:
-    speed: 0.3
+    speed: 0.6
     idle: [150, 151, 152]
     idle_frames: 12
     poses: [150, 151, 152]
@@ -320,7 +320,7 @@ sprites:
     ignore: true
     decay: true
   thingy:
-    speed: 0.15
+    speed: 0.3
     idle: [163, 164, 165]
     idle_frames: 12
     poses: [179, 180, 181, 195, 196, 197]
@@ -335,7 +335,7 @@ sprites:
     decay: true
     linger: true
   bluedevil:
-    speed: 0.3
+    speed: 0.6
     idle: [176, 177, 178]
     idle_frames: 12
     poses: [192, 192, 194, 208, 209, 210]
@@ -350,7 +350,7 @@ sprites:
     decay: true
     linger: true
   copter:
-    speed: 0.325
+    speed: 0.65
     idle: [182, 183, 184]
     idle_frames: 6
     poses: [182, 183, 184]
@@ -365,7 +365,7 @@ sprites:
     decay: true
     final: junk
   tripod:
-    speed: 0.3
+    speed: 0.6
     idle: [214, 215, 216]
     idle_frames: 6
     poses: [230, 231, 232]
@@ -380,7 +380,7 @@ sprites:
     decay: true
     final: junk
   drone:
-    speed: 0.3
+    speed: 0.6
     idle: [227, 228, 229]
     idle_frames: 6
     poses: [227, 228, 229]
@@ -395,7 +395,7 @@ sprites:
     decay: true
     final: junk
   cyclops:
-    speed: 0.25
+    speed: 0.5
     idle: [42, -42]
     idle_frames: 18
     poses: [41, 42, 43, 42]
@@ -412,7 +412,7 @@ sprites:
     decay: true
     final: junk
   wabbit:
-    speed: 0.25
+    speed: 0.5
     idle: [90, -90]
     idle_frames: 12
     poses: [89, 90, 91, 90]
