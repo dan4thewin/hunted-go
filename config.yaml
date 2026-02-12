@@ -48,6 +48,11 @@ config:
   ping_max_px: 80
   thug_reap_px: 120          # off-screen cleanup distance
 
+  # audio defaults
+  music_volume: 0.5
+  sfx_volume: 1.0
+  song_index: 0
+
   # spawn probabilities
   crate_pct: 0.5
   rock_pct: 1.0

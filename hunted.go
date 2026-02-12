@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/csv"
 	"fmt"
 	"math"
 	"math/rand"
@@ -209,6 +210,7 @@ type Audio struct {
 	SoundsLoaded bool
 	SfxVolume    float32 // 0.0 to 1.0
 	SfxEnabled   bool    // toggle sound effects on/off
+	SongRepeat   bool    // repeat current song instead of cycling
 }
 
 // Render holds graphics resources and display state
@@ -265,9 +267,10 @@ type Game struct {
 	Rng         *rand.Rand
 	Debug       int
 	DebugMsg    string
-	Mode        int
-	ThreatMax   float64
-	Threat      float64
+	Mode          int
+	ThreatMax     float64
+	ThreatMaxBase float64 // user's chosen base, saved to options
+	Threat        float64
 	ThugCount   int
 	WaifCount   int
 	Respite     int
@@ -294,8 +297,8 @@ type Game struct {
 	DefCrate       *SpriteDef
 	DefJunk        *SpriteDef
 	DefHeart       *SpriteDef
+	Defs           map[string]*SpriteDef // name→def for save/load
 	Thugs          []*SpriteDef
-	ThreatMaxStart float64
 	StartHearts    int
 	StartBombs     int
 	StartMines     int
@@ -317,7 +320,6 @@ func NewGame() *Game {
 		Debug:     0,
 		CamY:      16,
 		Path:      make([][]int, 32),
-		Audio:     Audio{MusicVolume: 0.5, SfxVolume: 1.0, SfxEnabled: true},
 		MenuState: MenuState{FirstLaunch: true},
 	}
 	for i := range g.Path {
@@ -428,7 +430,7 @@ func (g *Game) InitMusic() {
 		return
 	}
 
-	g.PlaySong(0)
+	g.PlaySong(g.SongIndex)
 }
 
 // PlaySong loads and plays the song at the given index
@@ -442,6 +444,7 @@ func (g *Game) PlaySong(index int) {
 	}
 	g.SongIndex = index % len(g.Songs)
 	g.Music = rl.LoadMusicStream(g.Songs[g.SongIndex])
+	g.Music.Looping = false
 	rl.SetMusicVolume(g.Music, g.MusicVolume)
 	rl.PlayMusicStream(g.Music)
 	g.MusicPlaying = true
@@ -472,9 +475,13 @@ func (g *Game) UpdateMusic() {
 		return
 	}
 	rl.UpdateMusicStream(g.Music)
-	// Auto-advance to next song when current one finishes
+	// Auto-advance or repeat when current song finishes
 	if !rl.IsMusicStreamPlaying(g.Music) {
-		g.NextSong()
+		if g.SongRepeat {
+			g.PlaySong(g.SongIndex)
+		} else {
+			g.NextSong()
+		}
 	}
 }
 
@@ -613,6 +620,10 @@ type GameConfig struct {
 	CratePct float64 `yaml:"crate_pct"`
 	RockPct  float64 `yaml:"rock_pct"`
 	JunkPct  float64 `yaml:"junk_pct"`
+
+	DefaultMusicVolume float32 `yaml:"music_volume"`
+	DefaultSfxVolume   float32 `yaml:"sfx_volume"`
+	DefaultSongIndex   int     `yaml:"song_index"`
 }
 
 // TilesConfig holds tile map layout and parameters
@@ -638,6 +649,314 @@ type SoundsConfig struct {
 	SpawnWaif string   `yaml:"spawn_waif"`
 	Throw     string   `yaml:"throw"`
 	Spotted   string   `yaml:"spotted"`
+}
+
+const optionsFile = "options.yaml"
+
+// SavedOptions is the set of user-adjustable settings persisted to options.yaml.
+// Field layout mirrors config.yaml sections for readability.
+type SavedOptions struct {
+	Options struct {
+		MusicVolume float32 `yaml:"music_volume"`
+		SfxVolume   float32 `yaml:"sfx_volume"`
+		SfxEnabled  bool    `yaml:"sfx_enabled"`
+		Mode        int     `yaml:"mode"`
+		ThreatMax   float64 `yaml:"threat_max"`
+		Debug       int     `yaml:"debug"`
+		HighScore   int     `yaml:"high_score"`
+		SongIndex   int     `yaml:"song_index"`
+		SongRepeat  bool    `yaml:"song_repeat"`
+	} `yaml:"options"`
+}
+
+// SaveOptions writes user options to options.yaml
+func (g *Game) SaveOptions() {
+	var s SavedOptions
+	s.Options.MusicVolume = g.MusicVolume
+	s.Options.SfxVolume = g.SfxVolume
+	s.Options.SfxEnabled = g.SfxEnabled
+	s.Options.Mode = g.Mode
+	s.Options.ThreatMax = g.ThreatMaxBase
+	s.Options.Debug = g.Debug
+	s.Options.HighScore = g.HighScore
+	s.Options.SongIndex = g.SongIndex
+	s.Options.SongRepeat = g.SongRepeat
+
+	data, err := yaml.Marshal(&s)
+	if err != nil {
+		fmt.Printf("save options: %v\n", err)
+		return
+	}
+	if err := os.WriteFile(optionsFile, data, 0644); err != nil {
+		fmt.Printf("save options: %v\n", err)
+	}
+}
+
+// LoadOptions reads options.yaml (if present) and applies saved values
+func (g *Game) LoadOptions() {
+	data, err := os.ReadFile(optionsFile)
+	if err != nil {
+		return // no saved options yet
+	}
+	var s SavedOptions
+	if err := yaml.Unmarshal(data, &s); err != nil {
+		fmt.Printf("load options: %v\n", err)
+		return
+	}
+	g.MusicVolume = s.Options.MusicVolume
+	g.SfxVolume = s.Options.SfxVolume
+	g.SfxEnabled = s.Options.SfxEnabled
+	g.Mode = s.Options.Mode
+	if s.Options.ThreatMax > 0 {
+		g.ThreatMaxBase = s.Options.ThreatMax
+		g.ThreatMax = s.Options.ThreatMax
+	}
+	g.Debug = s.Options.Debug
+	g.HighScore = s.Options.HighScore
+	g.SongIndex = s.Options.SongIndex
+	g.SongRepeat = s.Options.SongRepeat
+}
+
+const saveFile = "savegame.csv"
+
+// HasSaveGame returns true if a save file exists
+func HasSaveGame() bool {
+	_, err := os.Stat(saveFile)
+	return err == nil
+}
+
+// SaveGame writes game state and active objects to a CSV file
+func (g *Game) SaveGame() {
+	f, err := os.Create(saveFile)
+	if err != nil {
+		fmt.Printf("save game: %v\n", err)
+		return
+	}
+	defer f.Close()
+	w := csv.NewWriter(f)
+	defer w.Flush()
+
+	// Header + game state row
+	w.Write([]string{
+		"score", "hearts", "bombs", "mines", "threat_max", "threat",
+		"level", "cam_x", "cam_y", "tick", "seed", "thug_count", "waif_count",
+	})
+	w.Write([]string{
+		strconv.Itoa(g.Score),
+		strconv.Itoa(g.HeartCount),
+		strconv.Itoa(g.BombCount),
+		strconv.Itoa(g.MineCount),
+		strconv.FormatFloat(g.ThreatMax, 'f', -1, 64),
+		strconv.FormatFloat(g.Threat, 'f', -1, 64),
+		strconv.Itoa(g.Level),
+		strconv.FormatFloat(g.CamX, 'f', -1, 64),
+		strconv.FormatFloat(g.CamY, 'f', -1, 64),
+		strconv.Itoa(g.Tick),
+		strconv.FormatInt(g.Seed, 10),
+		strconv.Itoa(g.ThugCount),
+		strconv.Itoa(g.WaifCount),
+	})
+
+	// Object header
+	w.Write([]string{
+		"name", "x", "y", "speed", "base_speed", "dir", "last_dir", "flip",
+		"armed", "ignore", "threat", "invuln_count", "is_invuln",
+		"pal_index", "pal_swap", "pose_index", "frame_count",
+		"current_sprite", "is_idle", "current_frames",
+		"delay", "spotted", "scored",
+		"jitter_x", "jitter_y", "jitter_time",
+	})
+
+	for _, obj := range g.Objects {
+		// Only save player, thugs, and waifs
+		if obj.Kind != Player && obj.Kind != Thug && obj.Kind != Waif {
+			continue
+		}
+		w.Write([]string{
+			obj.Name,
+			strconv.FormatFloat(obj.X, 'f', -1, 64),
+			strconv.FormatFloat(obj.Y, 'f', -1, 64),
+			strconv.FormatFloat(obj.Speed, 'f', -1, 64),
+			strconv.FormatFloat(obj.BaseSpeed, 'f', -1, 64),
+			strconv.Itoa(obj.Dir),
+			strconv.Itoa(obj.LastDir),
+			strconv.FormatBool(obj.Flip),
+			strconv.FormatBool(obj.Armed),
+			strconv.FormatBool(obj.Ignore),
+			strconv.FormatFloat(obj.Threat, 'f', -1, 64),
+			strconv.Itoa(obj.InvulnCount),
+			strconv.FormatBool(obj.IsInvuln),
+			strconv.Itoa(obj.PalIndex),
+			strconv.FormatBool(obj.PalSwap),
+			strconv.Itoa(obj.PoseIndex),
+			strconv.Itoa(obj.FrameCount),
+			strconv.Itoa(obj.CurrentSprite),
+			strconv.FormatBool(obj.IsIdle),
+			strconv.Itoa(obj.CurrentFrames),
+			strconv.Itoa(obj.Delay),
+			strconv.FormatBool(obj.Spotted),
+			strconv.FormatBool(obj.Scored),
+			strconv.FormatFloat(obj.JitterX, 'f', -1, 64),
+			strconv.FormatFloat(obj.JitterY, 'f', -1, 64),
+			strconv.Itoa(obj.JitterTime),
+		})
+	}
+	fmt.Println("Game saved")
+}
+
+// LoadGame reads a saved game from CSV and restores state
+func (g *Game) LoadGame() error {
+	f, err := os.Open(saveFile)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	r := csv.NewReader(f)
+	r.FieldsPerRecord = -1 // game state and object rows have different field counts
+	rows, err := r.ReadAll()
+	if err != nil {
+		return fmt.Errorf("load game: %v", err)
+	}
+	if len(rows) < 4 {
+		return fmt.Errorf("load game: file too short")
+	}
+
+	// Row 0 = game state header, Row 1 = game state values
+	gs := rows[1]
+	g.Score, _ = strconv.Atoi(gs[0])
+	g.HeartCount, _ = strconv.Atoi(gs[1])
+	g.BombCount, _ = strconv.Atoi(gs[2])
+	g.MineCount, _ = strconv.Atoi(gs[3])
+	g.ThreatMax, _ = strconv.ParseFloat(gs[4], 64)
+	g.Threat, _ = strconv.ParseFloat(gs[5], 64)
+	g.Level, _ = strconv.Atoi(gs[6])
+	g.CamX, _ = strconv.ParseFloat(gs[7], 64)
+	g.CamY, _ = strconv.ParseFloat(gs[8], 64)
+	g.Tick, _ = strconv.Atoi(gs[9])
+	g.Seed, _ = strconv.ParseInt(gs[10], 10, 64)
+	g.ThugCount, _ = strconv.Atoi(gs[11])
+	g.WaifCount, _ = strconv.Atoi(gs[12])
+	g.Rng = rand.New(rand.NewSource(g.Seed))
+
+	// Set up playing state
+	g.State = StatePlaying
+	g.Playing = true
+	g.Won = false
+	g.Respite = g.RespiteF
+	g.ShakeFactor = 0
+	g.Objects = nil
+	g.Crumbs = nil
+	g.Sparks = nil
+	g.Pings = nil
+
+	// Reset tiles back to base map
+	for r := range g.TileMap {
+		for c := range g.TileMap[r] {
+			tile := g.TileMap[r][c]
+			if tile != 0 && tile != g.EndzoneTile &&
+				!(tile >= g.FirstWallTile && tile < g.FirstWallTile+g.WallTileCnt) {
+				g.TileMap[r][c] = 0
+			}
+		}
+	}
+
+	// Reset path
+	for i := range g.Path {
+		for j := range g.Path[i] {
+			g.Path[i][j] = MaxN
+		}
+	}
+
+	// Row 2 = object header, Row 3+ = objects
+	for _, row := range rows[3:] {
+		if len(row) < 26 {
+			continue
+		}
+		name := row[0]
+		def := g.Defs[name]
+		if def == nil {
+			fmt.Printf("load game: unknown sprite %q, skipping\n", name)
+			continue
+		}
+
+		x, _ := strconv.ParseFloat(row[1], 64)
+		y, _ := strconv.ParseFloat(row[2], 64)
+		speed, _ := strconv.ParseFloat(row[3], 64)
+		baseSpeed, _ := strconv.ParseFloat(row[4], 64)
+		dir, _ := strconv.Atoi(row[5])
+		lastDir, _ := strconv.Atoi(row[6])
+		flip, _ := strconv.ParseBool(row[7])
+		armed, _ := strconv.ParseBool(row[8])
+		ignore, _ := strconv.ParseBool(row[9])
+		threat, _ := strconv.ParseFloat(row[10], 64)
+		invulnCount, _ := strconv.Atoi(row[11])
+		isInvuln, _ := strconv.ParseBool(row[12])
+		palIndex, _ := strconv.Atoi(row[13])
+		palSwap, _ := strconv.ParseBool(row[14])
+		poseIndex, _ := strconv.Atoi(row[15])
+		frameCount, _ := strconv.Atoi(row[16])
+		currentSprite, _ := strconv.Atoi(row[17])
+		isIdle, _ := strconv.ParseBool(row[18])
+		currentFrames, _ := strconv.Atoi(row[19])
+		delay, _ := strconv.Atoi(row[20])
+		spotted, _ := strconv.ParseBool(row[21])
+		scored, _ := strconv.ParseBool(row[22])
+		jitterX, _ := strconv.ParseFloat(row[23], 64)
+		jitterY, _ := strconv.ParseFloat(row[24], 64)
+		jitterTime, _ := strconv.Atoi(row[25])
+
+		obj := g.Emplace(def, x, y)
+		obj.Speed = speed
+		obj.BaseSpeed = baseSpeed
+		obj.Dir = dir
+		obj.LastDir = lastDir
+		obj.Flip = flip
+		obj.Armed = armed
+		obj.Ignore = ignore
+		obj.Threat = threat
+		obj.InvulnCount = invulnCount
+		obj.IsInvuln = isInvuln
+		obj.PalIndex = palIndex
+		obj.PalSwap = palSwap
+		obj.PoseIndex = poseIndex
+		obj.FrameCount = frameCount
+		obj.CurrentSprite = currentSprite
+		obj.IsIdle = isIdle
+		obj.CurrentFrames = currentFrames
+		obj.Delay = delay
+		obj.Spotted = spotted
+		obj.Scored = scored
+		obj.JitterX = jitterX
+		obj.JitterY = jitterY
+		obj.JitterTime = jitterTime
+
+		// Re-attach controllers based on Kind
+		switch obj.Kind {
+		case Player:
+			obj.Controller = PlayerInput
+			obj.PostMove = PlayerPostMove
+			obj.PathC = -1
+			obj.PathR = -1
+			g.Player = obj
+		case Thug:
+			obj.Controller = Follow
+			obj.XMaxLimit = FinishLine - obj.Width - obj.XOff
+		case Waif:
+			obj.Controller = FollowPath
+			obj.PostMove = WaifPostMove
+			if obj.Delay > 0 {
+				obj.PreAct = SlowStart
+			}
+		}
+	}
+
+	if g.Player != nil {
+		g.UpdatePath(g.Player)
+	}
+
+	os.Remove(saveFile)
+	fmt.Println("Game loaded")
+	return nil
 }
 
 // SpriteDefYAML is the YAML representation of a sprite definition
@@ -735,11 +1054,15 @@ func (g *Game) LoadConfig(filename string) error {
 
 	// Store config values
 	g.GameConfig = cfg.Config
-	g.ThreatMaxStart = cfg.Config.ThreatMaxStart
+	g.ThreatMaxBase = cfg.Config.ThreatMaxStart
 	g.ThreatMax = cfg.Config.ThreatMaxStart
 	g.StartHearts = cfg.Config.HeartCount
 	g.StartBombs = cfg.Config.BombCount
 	g.StartMines = cfg.Config.MineCount
+	g.Audio.MusicVolume = cfg.Config.DefaultMusicVolume
+	g.Audio.SfxVolume = cfg.Config.DefaultSfxVolume
+	g.Audio.SfxEnabled = true
+	g.Audio.SongIndex = cfg.Config.DefaultSongIndex
 
 	// Store tile config
 	g.BlackTile = cfg.Tiles.BlackTile
@@ -781,6 +1104,9 @@ func (g *Game) LoadConfig(filename string) error {
 			def.Final = defs[f]
 		}
 	}
+
+	// Keep full map for save/load restore
+	g.Defs = defs
 
 	// Build thug list from sprite references
 	g.Thugs = make([]*SpriteDef, len(cfg.Thugs))
@@ -2064,8 +2390,13 @@ func (g *Game) Update() {
 // Options menu items
 const optionsItemCount = 10 // volume, music, song, sfx volume, sfx toggle, mode, threat, debug, back, quit
 
-// Title menu items
-const titleMenuCount = 4 // start, options, credits, quit
+// titleMenuLabels returns the labels for the title menu
+func titleMenuLabels() []string {
+	if HasSaveGame() {
+		return []string{"Continue", "Start", "Options", "Credits", "Quit"}
+	}
+	return []string{"Start", "Options", "Credits", "Quit"}
+}
 
 // Mode names for display
 var modeNames = []string{"Normal", "Normal", "Relaxed", "Stepwise"}
@@ -2130,8 +2461,22 @@ func (g *Game) UpdateOptions() {
 				rl.SetMusicVolume(g.Music, g.MusicVolume)
 			}
 		}
-	case 1: // Music checkbox
-		if enterPressed || rl.IsKeyPressed(rl.KeyX) || rl.IsKeyPressed(rl.KeyLeft) || rl.IsKeyPressed(rl.KeyRight) || rl.IsMouseButtonPressed(rl.MouseLeftButton) {
+	case 1: // Music checkbox + Repeat checkbox
+		if rl.IsMouseButtonPressed(rl.MouseLeftButton) {
+			mx, _, mw, _ := g.menuItemRect(1)
+			midX := float32(mx) + float32(mw)*0.5
+			if mouse.X >= midX {
+				g.SongRepeat = !g.SongRepeat
+			} else {
+				if g.MusicPlaying {
+					g.StopMusic()
+				} else if len(g.Songs) > 0 {
+					g.PlaySong(g.SongIndex)
+				}
+			}
+		} else if rl.IsKeyPressed(rl.KeyRight) {
+			g.SongRepeat = !g.SongRepeat
+		} else if enterPressed || rl.IsKeyPressed(rl.KeyX) || rl.IsKeyPressed(rl.KeyLeft) {
 			if g.MusicPlaying {
 				g.StopMusic()
 			} else if len(g.Songs) > 0 {
@@ -2186,8 +2531,9 @@ func (g *Game) UpdateOptions() {
 	case 6: // Threat slider
 		g.updateThreatSlider(mouse)
 		if enterPressed {
-			// Reset to default
+			// Reset to config default
 			g.ThreatMax = g.ThreatMaxStart
+			g.ThreatMaxBase = g.ThreatMaxStart
 		}
 	case 7: // Debug
 		if rl.IsKeyPressed(rl.KeyRight) || enterPressed {
@@ -2207,9 +2553,14 @@ func (g *Game) UpdateOptions() {
 	case 8: // Back
 		if enterPressed || rl.IsKeyPressed(rl.KeyX) || rl.IsMouseButtonPressed(rl.MouseLeftButton) {
 			g.Paused = false
+			g.SaveOptions()
 		}
-	case 9: // Quit
+	case 9: // Quit / Save and Quit
 		if enterPressed || rl.IsKeyPressed(rl.KeyX) || rl.IsMouseButtonPressed(rl.MouseLeftButton) {
+			if g.State == StatePlaying || (g.State == StateGameOver && g.Won) {
+				g.SaveGame()
+			}
+			g.SaveOptions()
 			rl.CloseWindow()
 			os.Exit(0)
 		}
@@ -2222,9 +2573,11 @@ func (g *Game) updateThreatSlider(mouse rl.Vector2) {
 	// Keyboard
 	if rl.IsKeyPressed(rl.KeyRight) {
 		g.ThreatMax = min(g.ThreatMax+g.ThreatStep, g.ThreatCapHi)
+		g.ThreatMaxBase = g.ThreatMax
 	}
 	if rl.IsKeyPressed(rl.KeyLeft) {
 		g.ThreatMax = max(g.ThreatMax-g.ThreatStep, g.ThreatCapLo)
+		g.ThreatMaxBase = g.ThreatMax
 	}
 
 	// Mouse drag on slider
@@ -2234,6 +2587,7 @@ func (g *Game) updateThreatSlider(mouse rl.Vector2) {
 			raw := float64(mouse.X-float32(sliderX)) / float64(sliderW)
 			g.ThreatMax = g.ThreatCapLo + raw*(g.ThreatCapHi-g.ThreatCapLo)
 			g.ThreatMax = max(g.ThreatCapLo, min(g.ThreatCapHi, g.ThreatMax))
+			g.ThreatMaxBase = g.ThreatMax
 		}
 	}
 }
@@ -2301,7 +2655,11 @@ func (g *Game) menuItemRect(index int) (int32, int32, int32, int32) {
 // titleMenuRect returns x, y, w, h for a title menu row
 func (g *Game) titleMenuRect(index int) (int32, int32, int32, int32) {
 	scale := float32(g.WindowSize) / 512.0
+	menuCount := len(titleMenuLabels())
 	rowH := int32(50 * scale)
+	if menuCount > 4 {
+		rowH = int32(40 * scale)
+	}
 	menuX := int32(140 * scale)
 	menuW := g.WindowSize - 2*menuX
 	baseY := int32(float32(g.WindowSize)/2 + 40*scale)
@@ -2353,23 +2711,28 @@ func (g *Game) sfxVolumeSliderRect() (int32, int32, int32, int32) {
 // UpdateTitle handles title screen
 func (g *Game) UpdateTitle() {
 	g.Tick++
+	labels := titleMenuLabels()
+	menuCount := len(labels)
+	if g.TitleMenuIndex >= menuCount {
+		g.TitleMenuIndex = 0
+	}
 
 	mouse := rl.GetMousePosition()
 
 	// Arrow navigation — checked first so keyboard takes priority
 	if rl.IsKeyPressed(rl.KeyUp) {
-		g.TitleMenuIndex = (g.TitleMenuIndex - 1 + titleMenuCount) % titleMenuCount
+		g.TitleMenuIndex = (g.TitleMenuIndex - 1 + menuCount) % menuCount
 	} else if rl.IsKeyPressed(rl.KeyDown) {
-		g.TitleMenuIndex = (g.TitleMenuIndex + 1) % titleMenuCount
+		g.TitleMenuIndex = (g.TitleMenuIndex + 1) % menuCount
 	} else if g.mouseMoved(mouse) {
 		// Mouse hover on title menu — only when mouse moved and within margin
 		scale := float32(g.WindowSize) / 512.0
 		margin := float32(19 * scale) // ~0.5 cm dead zone
 		firstX, firstY, firstW, _ := g.titleMenuRect(0)
-		_, lastY, _, lastH := g.titleMenuRect(titleMenuCount - 1)
+		_, lastY, _, lastH := g.titleMenuRect(menuCount - 1)
 		if mouse.X >= float32(firstX)-margin && mouse.X <= float32(firstX+firstW)+margin &&
 			mouse.Y >= float32(firstY)-margin && mouse.Y <= float32(lastY+lastH)+margin {
-			for i := 0; i < titleMenuCount; i++ {
+			for i := 0; i < menuCount; i++ {
 				_, itemY, _, itemH := g.titleMenuRect(i)
 				if mouse.Y >= float32(itemY) && mouse.Y < float32(itemY+itemH) {
 					if g.TitleMenuIndex != i {
@@ -2384,8 +2747,15 @@ func (g *Game) UpdateTitle() {
 	enterPressed := rl.IsKeyPressed(rl.KeyEnter) || rl.IsKeyPressed(rl.KeyX)
 	clicked := rl.IsMouseButtonPressed(rl.MouseLeftButton)
 
-	switch g.TitleMenuIndex {
-	case 0: // Start
+	label := labels[g.TitleMenuIndex]
+	switch label {
+	case "Continue":
+		if enterPressed || clicked {
+			if err := g.LoadGame(); err != nil {
+				fmt.Printf("Failed to load: %v\n", err)
+			}
+		}
+	case "Start":
 		if enterPressed || clicked {
 			if g.FirstLaunch {
 				g.FirstLaunch = false
@@ -2393,15 +2763,15 @@ func (g *Game) UpdateTitle() {
 			}
 			g.StartGame()
 		}
-	case 1: // Options
+	case "Options":
 		if enterPressed || clicked {
 			g.Paused = true
 		}
-	case 2: // Credits
+	case "Credits":
 		if enterPressed || clicked {
 			g.ShowCredits = true
 		}
-	case 3: // Quit
+	case "Quit":
 		if enterPressed || clicked {
 			rl.CloseWindow()
 			os.Exit(0)
@@ -2541,7 +2911,7 @@ func (g *Game) StartGame() {
 		g.BombCount = g.StartBombs
 		g.MineCount = g.StartMines
 		g.Score = 0
-		g.ThreatMax = g.ThreatMaxStart
+		g.ThreatMax = g.ThreatMaxBase
 		g.Level = 0
 	}
 
@@ -2709,6 +3079,15 @@ func (g *Game) DrawOptions() {
 			}
 			rl.DrawTextEx(g.Font, stateText, rl.Vector2{X: cbX + float32(cbSize) + 10*scale, Y: ly}, fontSize, 2, valueColor)
 
+			// Repeat checkbox (checkbox then label, same spacing as music toggle)
+			repCbX := cbX + float32(cbSize) + 60*scale
+			rl.DrawRectangleLines(int32(repCbX), int32(cbY), cbSize, cbSize, valueColor)
+			if g.SongRepeat {
+				pad := int32(3 * scale)
+				rl.DrawRectangle(int32(repCbX)+pad, int32(cbY)+pad, cbSize-2*pad, cbSize-2*pad, valueColor)
+			}
+			rl.DrawTextEx(g.Font, "Repeat", rl.Vector2{X: repCbX + float32(cbSize) + 10*scale, Y: ly}, fontSize, 2, valueColor)
+
 		case 2: // Song
 			rl.DrawTextEx(g.Font, "Song", rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
 			if len(g.Songs) > 0 {
@@ -2790,7 +3169,11 @@ func (g *Game) DrawOptions() {
 			rl.DrawTextEx(g.Font, "Back", rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
 
 		case 9: // Quit
-			rl.DrawTextEx(g.Font, "Quit", rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
+			quitLabel := "Quit"
+			if g.State == StatePlaying || (g.State == StateGameOver && g.Won) {
+				quitLabel = "Save and Quit"
+			}
+			rl.DrawTextEx(g.Font, quitLabel, rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
 		}
 	}
 }
@@ -2832,8 +3215,9 @@ func (g *Game) DrawTitle() {
 	rl.DrawTextEx(g.Font, "HUNTED", rl.Vector2{X: cx - 120, Y: cy - 80 + 32}, 80, 2, PicoOrange)
 
 	// Title menu
-	titleLabels := []string{"Start", "Options", "Credits", "Quit"}
-	for i := 0; i < titleMenuCount; i++ {
+	labels := titleMenuLabels()
+	menuCount := len(labels)
+	for i := 0; i < menuCount; i++ {
 		menuX, y, menuW, rowH := g.titleMenuRect(i)
 		selected := i == g.TitleMenuIndex
 
@@ -2848,7 +3232,7 @@ func (g *Game) DrawTitle() {
 
 		lx := float32(menuX) + float32(menuW)/2 - 40*scale
 		ly := float32(y) + float32(rowH-int32(40*scale))/2
-		rl.DrawTextEx(g.Font, titleLabels[i], rl.Vector2{X: lx, Y: ly}, 40*scale, 2, color)
+		rl.DrawTextEx(g.Font, labels[i], rl.Vector2{X: lx, Y: ly}, 40*scale, 2, color)
 	}
 }
 
@@ -3237,6 +3621,8 @@ func main() {
 		return
 	}
 
+	game.LoadOptions()
+
 	if err := game.LoadResources(); err != nil {
 		fmt.Printf("Warning: %v\n", err)
 		// Continue without spritesheet - will use colored rectangles
@@ -3256,5 +3642,9 @@ func main() {
 		game.Draw()
 	}
 
+	if game.State == StatePlaying || (game.State == StateGameOver && game.Won) {
+		game.SaveGame()
+	}
+	game.SaveOptions()
 	rl.UnloadFont(game.Font)
 }
