@@ -198,6 +198,7 @@ type Audio struct {
 	SongIndex    int
 	Music        rl.Music
 	MusicPlaying bool
+	MusicEnabled bool // user toggle for music on/off
 	MusicVolume  float32
 	SndExplosion []rl.Sound
 	SndCrunch    rl.Sound
@@ -430,7 +431,9 @@ func (g *Game) InitMusic() {
 		return
 	}
 
-	g.PlaySong(g.SongIndex)
+	if g.MusicEnabled {
+		g.PlaySong(g.SongIndex)
+	}
 }
 
 // PlaySong loads and plays the song at the given index
@@ -578,6 +581,7 @@ type AssetsConfig struct {
 	PaletteShader string `yaml:"palette_shader"`
 	SoundsDir     string `yaml:"sounds_dir"`
 	MusicDir      string `yaml:"music_dir"`
+	SaveDir       string `yaml:"save_dir"`
 }
 
 // GameConfig holds tunable game parameters
@@ -651,13 +655,22 @@ type SoundsConfig struct {
 	Spotted   string   `yaml:"spotted"`
 }
 
-const optionsFile = "options.yaml"
+// optionsPath returns the full path to the options file
+func (g *Game) optionsPath() string {
+	return filepath.Join(g.Assets.SaveDir, "options.yaml")
+}
+
+// savePath returns the full path to the save game file
+func (g *Game) savePath() string {
+	return filepath.Join(g.Assets.SaveDir, "savegame.csv")
+}
 
 // SavedOptions is the set of user-adjustable settings persisted to options.yaml.
 // Field layout mirrors config.yaml sections for readability.
 type SavedOptions struct {
 	Options struct {
 		MusicVolume float32 `yaml:"music_volume"`
+		MusicEnabled bool   `yaml:"music_enabled"`
 		SfxVolume   float32 `yaml:"sfx_volume"`
 		SfxEnabled  bool    `yaml:"sfx_enabled"`
 		Mode        int     `yaml:"mode"`
@@ -673,6 +686,7 @@ type SavedOptions struct {
 func (g *Game) SaveOptions() {
 	var s SavedOptions
 	s.Options.MusicVolume = g.MusicVolume
+	s.Options.MusicEnabled = g.MusicEnabled
 	s.Options.SfxVolume = g.SfxVolume
 	s.Options.SfxEnabled = g.SfxEnabled
 	s.Options.Mode = g.Mode
@@ -687,14 +701,18 @@ func (g *Game) SaveOptions() {
 		fmt.Printf("save options: %v\n", err)
 		return
 	}
-	if err := os.WriteFile(optionsFile, data, 0644); err != nil {
+	if err := os.MkdirAll(g.Assets.SaveDir, 0755); err != nil {
+		fmt.Printf("save options: %v\n", err)
+		return
+	}
+	if err := os.WriteFile(g.optionsPath(), data, 0644); err != nil {
 		fmt.Printf("save options: %v\n", err)
 	}
 }
 
 // LoadOptions reads options.yaml (if present) and applies saved values
 func (g *Game) LoadOptions() {
-	data, err := os.ReadFile(optionsFile)
+	data, err := os.ReadFile(g.optionsPath())
 	if err != nil {
 		return // no saved options yet
 	}
@@ -704,6 +722,7 @@ func (g *Game) LoadOptions() {
 		return
 	}
 	g.MusicVolume = s.Options.MusicVolume
+	g.MusicEnabled = s.Options.MusicEnabled
 	g.SfxVolume = s.Options.SfxVolume
 	g.SfxEnabled = s.Options.SfxEnabled
 	g.Mode = s.Options.Mode
@@ -717,17 +736,19 @@ func (g *Game) LoadOptions() {
 	g.SongRepeat = s.Options.SongRepeat
 }
 
-const saveFile = "savegame.csv"
-
 // HasSaveGame returns true if a save file exists
-func HasSaveGame() bool {
-	_, err := os.Stat(saveFile)
+func (g *Game) HasSaveGame() bool {
+	_, err := os.Stat(g.savePath())
 	return err == nil
 }
 
 // SaveGame writes game state and active objects to a CSV file
 func (g *Game) SaveGame() {
-	f, err := os.Create(saveFile)
+	if err := os.MkdirAll(g.Assets.SaveDir, 0755); err != nil {
+		fmt.Printf("save game: %v\n", err)
+		return
+	}
+	f, err := os.Create(g.savePath())
 	if err != nil {
 		fmt.Printf("save game: %v\n", err)
 		return
@@ -806,7 +827,7 @@ func (g *Game) SaveGame() {
 
 // LoadGame reads a saved game from CSV and restores state
 func (g *Game) LoadGame() error {
-	f, err := os.Open(saveFile)
+	f, err := os.Open(g.savePath())
 	if err != nil {
 		return err
 	}
@@ -954,7 +975,7 @@ func (g *Game) LoadGame() error {
 		g.UpdatePath(g.Player)
 	}
 
-	os.Remove(saveFile)
+	os.Remove(g.savePath())
 	fmt.Println("Game loaded")
 	return nil
 }
@@ -1062,6 +1083,7 @@ func (g *Game) LoadConfig(filename string) error {
 	g.Audio.MusicVolume = cfg.Config.DefaultMusicVolume
 	g.Audio.SfxVolume = cfg.Config.DefaultSfxVolume
 	g.Audio.SfxEnabled = true
+	g.Audio.MusicEnabled = true
 	g.Audio.SongIndex = cfg.Config.DefaultSongIndex
 
 	// Store tile config
@@ -2391,8 +2413,8 @@ func (g *Game) Update() {
 const optionsItemCount = 10 // volume, music, song, sfx volume, sfx toggle, mode, threat, debug, back, quit
 
 // titleMenuLabels returns the labels for the title menu
-func titleMenuLabels() []string {
-	if HasSaveGame() {
+func (g *Game) titleMenuLabels() []string {
+	if g.HasSaveGame() {
 		return []string{"Continue", "Start", "Options", "Credits", "Quit"}
 	}
 	return []string{"Start", "Options", "Credits", "Quit"}
@@ -2468,7 +2490,8 @@ func (g *Game) UpdateOptions() {
 			if mouse.X >= midX {
 				g.SongRepeat = !g.SongRepeat
 			} else {
-				if g.MusicPlaying {
+				g.MusicEnabled = !g.MusicEnabled
+				if !g.MusicEnabled {
 					g.StopMusic()
 				} else if len(g.Songs) > 0 {
 					g.PlaySong(g.SongIndex)
@@ -2477,7 +2500,8 @@ func (g *Game) UpdateOptions() {
 		} else if rl.IsKeyPressed(rl.KeyRight) {
 			g.SongRepeat = !g.SongRepeat
 		} else if enterPressed || rl.IsKeyPressed(rl.KeyX) || rl.IsKeyPressed(rl.KeyLeft) {
-			if g.MusicPlaying {
+			g.MusicEnabled = !g.MusicEnabled
+			if !g.MusicEnabled {
 				g.StopMusic()
 			} else if len(g.Songs) > 0 {
 				g.PlaySong(g.SongIndex)
@@ -2655,7 +2679,7 @@ func (g *Game) menuItemRect(index int) (int32, int32, int32, int32) {
 // titleMenuRect returns x, y, w, h for a title menu row
 func (g *Game) titleMenuRect(index int) (int32, int32, int32, int32) {
 	scale := float32(g.WindowSize) / 512.0
-	menuCount := len(titleMenuLabels())
+	menuCount := len(g.titleMenuLabels())
 	rowH := int32(50 * scale)
 	if menuCount > 4 {
 		rowH = int32(40 * scale)
@@ -2711,7 +2735,7 @@ func (g *Game) sfxVolumeSliderRect() (int32, int32, int32, int32) {
 // UpdateTitle handles title screen
 func (g *Game) UpdateTitle() {
 	g.Tick++
-	labels := titleMenuLabels()
+	labels := g.titleMenuLabels()
 	menuCount := len(labels)
 	if g.TitleMenuIndex >= menuCount {
 		g.TitleMenuIndex = 0
@@ -3069,12 +3093,12 @@ func (g *Game) DrawOptions() {
 			cbX := float32(menuX) + float32(menuW)*0.35
 			cbY := float32(y) + float32(rowH-cbSize)/2
 			rl.DrawRectangleLines(int32(cbX), int32(cbY), cbSize, cbSize, valueColor)
-			if g.MusicPlaying {
+			if g.MusicEnabled {
 				pad := int32(3 * scale)
 				rl.DrawRectangle(int32(cbX)+pad, int32(cbY)+pad, cbSize-2*pad, cbSize-2*pad, valueColor)
 			}
 			stateText := "Off"
-			if g.MusicPlaying {
+			if g.MusicEnabled {
 				stateText = "On"
 			}
 			rl.DrawTextEx(g.Font, stateText, rl.Vector2{X: cbX + float32(cbSize) + 10*scale, Y: ly}, fontSize, 2, valueColor)
@@ -3215,7 +3239,7 @@ func (g *Game) DrawTitle() {
 	rl.DrawTextEx(g.Font, "HUNTED", rl.Vector2{X: cx - 120, Y: cy - 80 + 32}, 80, 2, PicoOrange)
 
 	// Title menu
-	labels := titleMenuLabels()
+	labels := g.titleMenuLabels()
 	menuCount := len(labels)
 	for i := 0; i < menuCount; i++ {
 		menuX, y, menuW, rowH := g.titleMenuRect(i)

@@ -1,3 +1,5 @@
+**Surface contradictions immediately.** If stored facts, code comments, documentation, or architecture notes conflict with actual code behavior, flag the contradiction to the user at high priority before proceeding. Do not silently trust one source over another—the user decides which is correct.
+
 Use short, concise commit messages.
 
 As the codebase evolves, frequently suggest brief updates to the architecture notes below so they stay current. Propose changes early and often—small, incremental updates are easier to review than large rewrites.

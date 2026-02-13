@@ -5,6 +5,7 @@ assets:
   palette_shader: palette_swap.fs
   sounds_dir: sounds
   music_dir: music
+  save_dir: saves
 
 config:
   heart_count: 4
