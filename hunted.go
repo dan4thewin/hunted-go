@@ -3065,9 +3065,54 @@ func (g *Game) Draw() {
 	rl.EndDrawing()
 }
 
+// --- DrawOptions helpers ---
+//
+//   drawOptionSlider   — draws a labeled slider with knob and value text
+//   drawOptionCheckbox — draws a labeled checkbox with On/Off text
+//   drawOptionSelector — draws a labeled < value > selector
+
+func (g *Game) drawOptionSlider(label string, sx, sy, sw, sh, y, rowH int32,
+	frac float32, valueText string, lx, ly, fontSize, scale float32, labelColor, valueColor rl.Color) {
+	rl.DrawTextEx(g.Font, label, rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
+	rl.DrawRectangle(sx, sy, sw, sh, SliderTrack)
+	fillW := int32(float32(sw) * frac)
+	rl.DrawRectangle(sx, sy, fillW, sh, valueColor)
+	knobX := sx + fillW
+	knobH := int32(float32(rowH) * 0.6)
+	knobY := y + (rowH-knobH)/2
+	rl.DrawRectangle(knobX-int32(2*scale), knobY, int32(4*scale), knobH, rl.White)
+	pctX := float32(sx+sw) + 8*scale
+	rl.DrawTextEx(g.Font, valueText, rl.Vector2{X: pctX, Y: ly}, fontSize, 2, valueColor)
+}
+
+func (g *Game) drawOptionCheckbox(label string, checked bool, menuX, menuW int32,
+	y, rowH int32, lx, ly, fontSize, scale float32, labelColor, valueColor rl.Color) float32 {
+	rl.DrawTextEx(g.Font, label, rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
+	cbSize := int32(fontSize * 0.7)
+	cbX := float32(menuX) + float32(menuW)*0.35
+	cbY := float32(y) + float32(rowH-cbSize)/2
+	rl.DrawRectangleLines(int32(cbX), int32(cbY), cbSize, cbSize, valueColor)
+	if checked {
+		pad := int32(3 * scale)
+		rl.DrawRectangle(int32(cbX)+pad, int32(cbY)+pad, cbSize-2*pad, cbSize-2*pad, valueColor)
+	}
+	stateText := cond(checked, "On", "Off")
+	rl.DrawTextEx(g.Font, stateText, rl.Vector2{X: cbX + float32(cbSize) + 10*scale, Y: ly}, fontSize, 2, valueColor)
+	return cbX + float32(cbSize) + 60*scale
+}
+
+func (g *Game) drawOptionSelector(label, value string, menuX, menuW int32,
+	lx, ly, fontSize, scale float32, labelColor, valueColor rl.Color) {
+	rl.DrawTextEx(g.Font, label, rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
+	arrX := float32(menuX) + float32(menuW)*0.35
+	rl.DrawTextEx(g.Font, "<", rl.Vector2{X: arrX, Y: ly}, fontSize, 2, valueColor)
+	rl.DrawTextEx(g.Font, value, rl.Vector2{X: arrX + 20*scale, Y: ly}, fontSize, 2, valueColor)
+	endX := float32(menuX+menuW) - 30*scale
+	rl.DrawTextEx(g.Font, ">", rl.Vector2{X: endX, Y: ly}, fontSize, 2, valueColor)
+}
+
 // DrawOptions draws the options overlay (also serves as pause menu during gameplay)
 func (g *Game) DrawOptions() {
-	// Semi-transparent background
 	rl.DrawRectangle(0, 0, g.WindowSize, g.WindowSize, OverlayDim)
 
 	scale := float32(g.WindowSize) / 512.0
@@ -3075,75 +3120,33 @@ func (g *Game) DrawOptions() {
 	smallFont := 22 * scale
 
 	// Title — show "PAUSED" only during gameplay
-	if g.State == StatePlaying || g.State == StateGameOver {
-		titleX := float32(g.WindowSize)/2 - 50*scale
-		titleY := 12 * scale
-		rl.DrawTextEx(g.Font, "PAUSED", rl.Vector2{X: titleX, Y: titleY}, 55*scale, 2, PicoOrange)
-	} else {
-		titleX := float32(g.WindowSize)/2 - 60*scale
-		titleY := 12 * scale
-		rl.DrawTextEx(g.Font, "OPTIONS", rl.Vector2{X: titleX, Y: titleY}, 55*scale, 2, PicoOrange)
-	}
+	title := cond(g.State == StatePlaying || g.State == StateGameOver, "PAUSED", "OPTIONS")
+	titleX := float32(g.WindowSize)/2 - cond(title == "PAUSED", 50*scale, 60*scale)
+	rl.DrawTextEx(g.Font, title, rl.Vector2{X: titleX, Y: 12 * scale}, 55*scale, 2, PicoOrange)
 
 	for i := 0; i < optionsItemCount; i++ {
 		menuX, y, menuW, rowH := g.menuItemRect(i)
 		selected := i == g.MenuIndex
-
-		// Highlight bar
 		if selected {
 			rl.DrawRectangle(menuX, y, menuW, rowH, HighlightOrange)
 		}
 
-		labelColor := PicoBrown
-		valueColor := PicoOrange
-		if selected {
-			labelColor = PicoOrange
-			valueColor = rl.White
-		}
-
+		labelColor := cond(selected, PicoOrange, PicoBrown)
+		valueColor := cond(selected, rl.White, PicoOrange)
 		lx := float32(menuX) + 10*scale
 		ly := float32(y) + float32(rowH-int32(fontSize))/2
 
 		switch i {
 		case 0: // Volume slider
-			rl.DrawTextEx(g.Font, "Volume", rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
 			sx, sy, sw, sh := g.volumeSliderRect()
-			rl.DrawRectangle(sx, sy, sw, sh, SliderTrack)
-			fillW := int32(float32(sw) * g.MusicVolume)
-			rl.DrawRectangle(sx, sy, fillW, sh, valueColor)
-			knobX := sx + fillW
-			knobH := int32(float32(rowH) * 0.6)
-			knobY := y + (rowH-knobH)/2
-			rl.DrawRectangle(knobX-int32(2*scale), knobY, int32(4*scale), knobH, rl.White)
-			pctText := fmt.Sprintf("%d%%", int(g.MusicVolume*100+0.5))
-			pctX := float32(sx+sw) + 8*scale
-			rl.DrawTextEx(g.Font, pctText, rl.Vector2{X: pctX, Y: ly}, fontSize, 2, valueColor)
-
-		case 1: // Music checkbox
-			rl.DrawTextEx(g.Font, "Music", rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
-			cbSize := int32(fontSize * 0.7)
-			cbX := float32(menuX) + float32(menuW)*0.35
-			cbY := float32(y) + float32(rowH-cbSize)/2
-			rl.DrawRectangleLines(int32(cbX), int32(cbY), cbSize, cbSize, valueColor)
-			if g.MusicEnabled {
-				pad := int32(3 * scale)
-				rl.DrawRectangle(int32(cbX)+pad, int32(cbY)+pad, cbSize-2*pad, cbSize-2*pad, valueColor)
-			}
-			stateText := "Off"
-			if g.MusicEnabled {
-				stateText = "On"
-			}
-			rl.DrawTextEx(g.Font, stateText, rl.Vector2{X: cbX + float32(cbSize) + 10*scale, Y: ly}, fontSize, 2, valueColor)
-
-			// Repeat checkbox (checkbox then label, same spacing as music toggle)
-			repCbX := cbX + float32(cbSize) + 60*scale
-			rl.DrawRectangleLines(int32(repCbX), int32(cbY), cbSize, cbSize, valueColor)
-			if g.SongRepeat {
-				pad := int32(3 * scale)
-				rl.DrawRectangle(int32(repCbX)+pad, int32(cbY)+pad, cbSize-2*pad, cbSize-2*pad, valueColor)
-			}
-			rl.DrawTextEx(g.Font, "Repeat", rl.Vector2{X: repCbX + float32(cbSize) + 10*scale, Y: ly}, fontSize, 2, valueColor)
-
+			g.drawOptionSlider("Volume", sx, sy, sw, sh, y, rowH,
+				g.MusicVolume, fmt.Sprintf("%d%%", int(g.MusicVolume*100+0.5)),
+				lx, ly, fontSize, scale, labelColor, valueColor)
+		case 1: // Music + Repeat checkboxes
+			repCbX := g.drawOptionCheckbox("Music", g.MusicEnabled, menuX, menuW,
+				y, rowH, lx, ly, fontSize, scale, labelColor, valueColor)
+			g.drawOptionCheckbox("Repeat", g.SongRepeat, int32(repCbX)-menuX, menuW,
+				y, rowH, repCbX, ly, fontSize, scale, valueColor, valueColor)
 		case 2: // Song
 			rl.DrawTextEx(g.Font, "Song", rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
 			if len(g.Songs) > 0 {
@@ -3155,80 +3158,32 @@ func (g *Game) DrawOptions() {
 				endX := float32(menuX+menuW) - 30*scale
 				rl.DrawTextEx(g.Font, ">", rl.Vector2{X: endX, Y: ly}, fontSize, 2, valueColor)
 			}
-
 		case 3: // SFX Volume slider
-			rl.DrawTextEx(g.Font, "SFX Vol", rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
 			sx, sy, sw, sh := g.sfxVolumeSliderRect()
-			rl.DrawRectangle(sx, sy, sw, sh, SliderTrack)
-			fillW := int32(float32(sw) * g.SfxVolume)
-			rl.DrawRectangle(sx, sy, fillW, sh, valueColor)
-			knobX := sx + fillW
-			knobH := int32(float32(rowH) * 0.6)
-			knobY := y + (rowH-knobH)/2
-			rl.DrawRectangle(knobX-int32(2*scale), knobY, int32(4*scale), knobH, rl.White)
-			pctText := fmt.Sprintf("%d%%", int(g.SfxVolume*100+0.5))
-			pctX := float32(sx+sw) + 8*scale
-			rl.DrawTextEx(g.Font, pctText, rl.Vector2{X: pctX, Y: ly}, fontSize, 2, valueColor)
-
+			g.drawOptionSlider("SFX Vol", sx, sy, sw, sh, y, rowH,
+				g.SfxVolume, fmt.Sprintf("%d%%", int(g.SfxVolume*100+0.5)),
+				lx, ly, fontSize, scale, labelColor, valueColor)
 		case 4: // SFX toggle
-			rl.DrawTextEx(g.Font, "SFX", rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
-			cbSize := int32(fontSize * 0.7)
-			cbX := float32(menuX) + float32(menuW)*0.35
-			cbY := float32(y) + float32(rowH-cbSize)/2
-			rl.DrawRectangleLines(int32(cbX), int32(cbY), cbSize, cbSize, valueColor)
-			if g.SfxEnabled {
-				pad := int32(3 * scale)
-				rl.DrawRectangle(int32(cbX)+pad, int32(cbY)+pad, cbSize-2*pad, cbSize-2*pad, valueColor)
-			}
-			stateText := "Off"
-			if g.SfxEnabled {
-				stateText = "On"
-			}
-			rl.DrawTextEx(g.Font, stateText, rl.Vector2{X: cbX + float32(cbSize) + 10*scale, Y: ly}, fontSize, 2, valueColor)
-
+			g.drawOptionCheckbox("SFX", g.SfxEnabled, menuX, menuW,
+				y, rowH, lx, ly, fontSize, scale, labelColor, valueColor)
 		case 5: // Mode
-			rl.DrawTextEx(g.Font, "Mode", rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
-			arrX := float32(menuX) + float32(menuW)*0.35
 			curMode := "Normal"
 			if g.Mode < len(modeNames) {
 				curMode = modeNames[g.Mode]
 			}
-			rl.DrawTextEx(g.Font, "<", rl.Vector2{X: arrX, Y: ly}, fontSize, 2, valueColor)
-			rl.DrawTextEx(g.Font, curMode, rl.Vector2{X: arrX + 20*scale, Y: ly}, fontSize, 2, valueColor)
-			endX := float32(menuX+menuW) - 30*scale
-			rl.DrawTextEx(g.Font, ">", rl.Vector2{X: endX, Y: ly}, fontSize, 2, valueColor)
-
+			g.drawOptionSelector("Mode", curMode, menuX, menuW, lx, ly, fontSize, scale, labelColor, valueColor)
 		case 6: // Threat slider
-			rl.DrawTextEx(g.Font, "Threat", rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
 			sx, sy, sw, sh := g.threatSliderRect()
-			rl.DrawRectangle(sx, sy, sw, sh, SliderTrack)
 			frac := float32((g.ThreatMax - g.ThreatCapLo) / (g.ThreatCapHi - g.ThreatCapLo))
-			fillW := int32(float32(sw) * frac)
-			rl.DrawRectangle(sx, sy, fillW, sh, valueColor)
-			knobX := sx + fillW
-			knobH := int32(float32(rowH) * 0.6)
-			knobY := y + (rowH-knobH)/2
-			rl.DrawRectangle(knobX-int32(2*scale), knobY, int32(4*scale), knobH, rl.White)
-			threatText := fmt.Sprintf("%.1f", g.ThreatMax)
-			threatX := float32(sx+sw) + 8*scale
-			rl.DrawTextEx(g.Font, threatText, rl.Vector2{X: threatX, Y: ly}, fontSize, 2, valueColor)
-
+			g.drawOptionSlider("Threat", sx, sy, sw, sh, y, rowH,
+				frac, fmt.Sprintf("%.1f", g.ThreatMax),
+				lx, ly, fontSize, scale, labelColor, valueColor)
 		case 7: // Debug
-			rl.DrawTextEx(g.Font, "Debug", rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
-			arrX := float32(menuX) + float32(menuW)*0.35
-			rl.DrawTextEx(g.Font, "<", rl.Vector2{X: arrX, Y: ly}, fontSize, 2, valueColor)
-			rl.DrawTextEx(g.Font, fmt.Sprintf("%d", g.Debug), rl.Vector2{X: arrX + 20*scale, Y: ly}, fontSize, 2, valueColor)
-			endX := float32(menuX+menuW) - 30*scale
-			rl.DrawTextEx(g.Font, ">", rl.Vector2{X: endX, Y: ly}, fontSize, 2, valueColor)
-
+			g.drawOptionSelector("Debug", fmt.Sprintf("%d", g.Debug), menuX, menuW, lx, ly, fontSize, scale, labelColor, valueColor)
 		case 8: // Back
 			rl.DrawTextEx(g.Font, "Back", rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
-
 		case 9: // Quit
-			quitLabel := "Quit"
-			if g.State == StatePlaying || (g.State == StateGameOver && g.Won) {
-				quitLabel = "Save and Quit"
-			}
+			quitLabel := cond(g.State == StatePlaying || (g.State == StateGameOver && g.Won), "Save and Quit", "Quit")
 			rl.DrawTextEx(g.Font, quitLabel, rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
 		}
 	}
