@@ -2438,157 +2438,198 @@ func (g *Game) mouseMoved(mouse rl.Vector2) bool {
 	return moved
 }
 
+// --- Menu helpers ---
+//
+// Reusable helpers for options and title menu input handling.
+//
+//   menuNav         — arrow-key + mouse-hover navigation (wraps menuMouseHover)
+//   menuMouseHover  — hover detection within a bounding box of menu items
+//   cyclePick       — left/right/enter/click dispatch for cyclic selectors
+//   activatePressed — returns true on Enter, X, or mouse click
+//
+// Shared parameters:
+//   index    *int   — pointer to the current menu selection index
+//   count    int    — total number of menu items
+//   rectFunc        — returns (x, y, w, h) for item i; menuItemRect or titleMenuRect
+
+// menuNav handles arrow-key and mouse-hover navigation for a menu.
+func (g *Game) menuNav(index *int, count int, rectFunc func(int) (int32, int32, int32, int32)) {
+	if rl.IsKeyPressed(rl.KeyUp) {
+		*index = (*index - 1 + count) % count
+	} else if rl.IsKeyPressed(rl.KeyDown) {
+		*index = (*index + 1) % count
+	} else {
+		mouse := rl.GetMousePosition()
+		if g.mouseMoved(mouse) {
+			g.menuMouseHover(index, count, rectFunc)
+		}
+	}
+}
+
+func (g *Game) menuMouseHover(index *int, count int, rectFunc func(int) (int32, int32, int32, int32)) {
+	mouse := g.LastMousePos
+	scale := float32(g.WindowSize) / 512.0
+	margin := float32(19 * scale)
+	firstX, firstY, firstW, _ := rectFunc(0)
+	_, lastY, _, lastH := rectFunc(count - 1)
+	if mouse.X < float32(firstX)-margin || mouse.X > float32(firstX+firstW)+margin ||
+		mouse.Y < float32(firstY)-margin || mouse.Y > float32(lastY+lastH)+margin {
+		return
+	}
+	for i := 0; i < count; i++ {
+		_, itemY, _, itemH := rectFunc(i)
+		if mouse.Y >= float32(itemY) && mouse.Y < float32(itemY+itemH) {
+			*index = i
+			return
+		}
+	}
+}
+
+// cyclePick handles left/right/enter/click input for a cyclic selector.
+func (g *Game) cyclePick(menuIndex int, fn func(int)) {
+	if rl.IsKeyPressed(rl.KeyRight) || rl.IsKeyPressed(rl.KeyEnter) {
+		fn(1)
+	}
+	if rl.IsKeyPressed(rl.KeyLeft) {
+		fn(-1)
+	}
+	if rl.IsMouseButtonPressed(rl.MouseLeftButton) {
+		mx, _, mw, _ := g.menuItemRect(menuIndex)
+		if rl.GetMousePosition().X < float32(mx)+float32(mw)*0.5 {
+			fn(-1)
+		} else {
+			fn(1)
+		}
+	}
+}
+
+// activatePressed returns true when the user presses Enter, X, or clicks.
+func activatePressed() bool {
+	return rl.IsKeyPressed(rl.KeyEnter) || rl.IsKeyPressed(rl.KeyX) || rl.IsMouseButtonPressed(rl.MouseLeftButton)
+}
+
 // UpdateOptions handles input in the options menu
 func (g *Game) UpdateOptions() {
 	mouse := rl.GetMousePosition()
-
-	// Arrow navigation — checked first so keyboard takes priority
-	if rl.IsKeyPressed(rl.KeyUp) {
-		g.MenuIndex = (g.MenuIndex - 1 + optionsItemCount) % optionsItemCount
-	} else if rl.IsKeyPressed(rl.KeyDown) {
-		g.MenuIndex = (g.MenuIndex + 1) % optionsItemCount
-	} else if g.mouseMoved(mouse) {
-		// Mouse hover detection — only when mouse moved and within margin
-		scale := float32(g.WindowSize) / 512.0
-		margin := float32(19 * scale) // ~0.5 cm dead zone
-		firstX, firstY, firstW, _ := g.menuItemRect(0)
-		_, lastY, _, lastH := g.menuItemRect(optionsItemCount - 1)
-		if mouse.X >= float32(firstX)-margin && mouse.X <= float32(firstX+firstW)+margin &&
-			mouse.Y >= float32(firstY)-margin && mouse.Y <= float32(lastY+lastH)+margin {
-			for i := 0; i < optionsItemCount; i++ {
-				_, itemY, _, itemH := g.menuItemRect(i)
-				if mouse.Y >= float32(itemY) && mouse.Y < float32(itemY+itemH) {
-					if g.MenuIndex != i {
-						g.MenuIndex = i
-					}
-					break
-				}
-			}
-		}
-	}
-
-	// Enter key interacts with current item
-	enterPressed := rl.IsKeyPressed(rl.KeyEnter)
+	g.menuNav(&g.MenuIndex, optionsItemCount, g.menuItemRect)
 
 	switch g.MenuIndex {
-	case 0: // Volume slider
-		g.updateVolumeSlider(mouse)
-		if enterPressed {
-			if g.MusicVolume > 0 {
-				g.MusicVolume = 0
-			} else {
-				g.MusicVolume = 0.5
-			}
-			if g.MusicPlaying {
-				rl.SetMusicVolume(g.Music, g.MusicVolume)
-			}
+	case 0:
+		g.updateVolumeOption(mouse)
+	case 1:
+		g.updateMusicOption(mouse)
+	case 2:
+		g.updateSongOption()
+	case 3:
+		g.updateSfxVolumeOption(mouse)
+	case 4:
+		g.updateSfxToggle()
+	case 5:
+		g.cyclePick(5, func(dir int) { g.cycleMode(dir) })
+	case 6:
+		g.updateThreatOption(mouse)
+	case 7:
+		g.cyclePick(7, func(dir int) { g.Debug = (g.Debug + dir + 16) % 16 })
+	case 8:
+		g.updateBackOption()
+	case 9:
+		g.updateQuitOption()
+	}
+}
+
+func (g *Game) updateVolumeOption(mouse rl.Vector2) {
+	g.updateVolumeSlider(mouse)
+	if rl.IsKeyPressed(rl.KeyEnter) {
+		if g.MusicVolume > 0 {
+			g.MusicVolume = 0
+		} else {
+			g.MusicVolume = 0.5
 		}
-	case 1: // Music checkbox + Repeat checkbox
-		if rl.IsMouseButtonPressed(rl.MouseLeftButton) {
-			mx, _, mw, _ := g.menuItemRect(1)
-			midX := float32(mx) + float32(mw)*0.5
-			if mouse.X >= midX {
-				g.SongRepeat = !g.SongRepeat
-			} else {
-				g.MusicEnabled = !g.MusicEnabled
-				if !g.MusicEnabled {
-					g.StopMusic()
-				} else if len(g.Songs) > 0 {
-					g.PlaySong(g.SongIndex)
-				}
-			}
-		} else if rl.IsKeyPressed(rl.KeyRight) {
-			g.SongRepeat = !g.SongRepeat
-		} else if enterPressed || rl.IsKeyPressed(rl.KeyX) || rl.IsKeyPressed(rl.KeyLeft) {
-			g.MusicEnabled = !g.MusicEnabled
-			if !g.MusicEnabled {
-				g.StopMusic()
-			} else if len(g.Songs) > 0 {
-				g.PlaySong(g.SongIndex)
-			}
-		}
-	case 2: // Song select
-		if len(g.Songs) > 0 {
-			if rl.IsKeyPressed(rl.KeyRight) || enterPressed {
-				g.NextSong()
-			}
-			if rl.IsKeyPressed(rl.KeyLeft) {
-				g.PlaySong((g.SongIndex - 1 + len(g.Songs)) % len(g.Songs))
-			}
-			if rl.IsMouseButtonPressed(rl.MouseLeftButton) {
-				mx, _, mw, _ := g.menuItemRect(2)
-				if mouse.X < float32(mx)+float32(mw)*0.5 {
-					g.PlaySong((g.SongIndex - 1 + len(g.Songs)) % len(g.Songs))
-				} else {
-					g.NextSong()
-				}
-			}
-		}
-	case 3: // SFX Volume slider
-		g.updateSfxVolumeSlider(mouse)
-		if enterPressed {
-			if g.SfxVolume > 0 {
-				g.SfxVolume = 0
-			} else {
-				g.SfxVolume = 1.0
-			}
-		}
-	case 4: // SFX toggle
-		if enterPressed || rl.IsKeyPressed(rl.KeyX) || rl.IsKeyPressed(rl.KeyLeft) || rl.IsKeyPressed(rl.KeyRight) || rl.IsMouseButtonPressed(rl.MouseLeftButton) {
-			g.SfxEnabled = !g.SfxEnabled
-		}
-	case 5: // Mode select
-		if rl.IsKeyPressed(rl.KeyRight) || enterPressed {
-			g.cycleMode(1)
-		}
-		if rl.IsKeyPressed(rl.KeyLeft) {
-			g.cycleMode(-1)
-		}
-		if rl.IsMouseButtonPressed(rl.MouseLeftButton) {
-			mx, _, mw, _ := g.menuItemRect(5)
-			if mouse.X < float32(mx)+float32(mw)*0.5 {
-				g.cycleMode(-1)
-			} else {
-				g.cycleMode(1)
-			}
-		}
-	case 6: // Threat slider
-		g.updateThreatSlider(mouse)
-		if enterPressed {
-			// Reset to config default
-			g.ThreatMax = g.ThreatMaxStart
-			g.ThreatMaxBase = g.ThreatMaxStart
-		}
-	case 7: // Debug
-		if rl.IsKeyPressed(rl.KeyRight) || enterPressed {
-			g.Debug = (g.Debug + 1) % 16
-		}
-		if rl.IsKeyPressed(rl.KeyLeft) {
-			g.Debug = (g.Debug - 1 + 16) % 16
-		}
-		if rl.IsMouseButtonPressed(rl.MouseLeftButton) {
-			mx, _, mw, _ := g.menuItemRect(7)
-			if mouse.X < float32(mx)+float32(mw)*0.5 {
-				g.Debug = (g.Debug - 1 + 16) % 16
-			} else {
-				g.Debug = (g.Debug + 1) % 16
-			}
-		}
-	case 8: // Back
-		if enterPressed || rl.IsKeyPressed(rl.KeyX) || rl.IsMouseButtonPressed(rl.MouseLeftButton) {
-			g.Paused = false
-			g.SaveOptions()
-		}
-	case 9: // Quit / Save and Quit
-		if enterPressed || rl.IsKeyPressed(rl.KeyX) || rl.IsMouseButtonPressed(rl.MouseLeftButton) {
-			if g.State == StatePlaying || (g.State == StateGameOver && g.Won) {
-				g.SaveGame()
-			}
-			g.SaveOptions()
-			rl.CloseWindow()
-			os.Exit(0)
+		if g.MusicPlaying {
+			rl.SetMusicVolume(g.Music, g.MusicVolume)
 		}
 	}
+}
+
+func (g *Game) updateSfxVolumeOption(mouse rl.Vector2) {
+	g.updateSfxVolumeSlider(mouse)
+	if rl.IsKeyPressed(rl.KeyEnter) {
+		if g.SfxVolume > 0 {
+			g.SfxVolume = 0
+		} else {
+			g.SfxVolume = 1.0
+		}
+	}
+}
+
+func (g *Game) updateThreatOption(mouse rl.Vector2) {
+	g.updateThreatSlider(mouse)
+	if rl.IsKeyPressed(rl.KeyEnter) {
+		g.ThreatMax = g.ThreatMaxStart
+		g.ThreatMaxBase = g.ThreatMaxStart
+	}
+}
+
+func (g *Game) updateSfxToggle() {
+	if activatePressed() || rl.IsKeyPressed(rl.KeyLeft) || rl.IsKeyPressed(rl.KeyRight) {
+		g.SfxEnabled = !g.SfxEnabled
+	}
+}
+
+func (g *Game) updateBackOption() {
+	if activatePressed() {
+		g.Paused = false
+		g.SaveOptions()
+	}
+}
+
+func (g *Game) toggleMusicEnabled() {
+	g.MusicEnabled = !g.MusicEnabled
+	if !g.MusicEnabled {
+		g.StopMusic()
+	} else if len(g.Songs) > 0 {
+		g.PlaySong(g.SongIndex)
+	}
+}
+
+func (g *Game) updateMusicOption(mouse rl.Vector2) {
+	if rl.IsMouseButtonPressed(rl.MouseLeftButton) {
+		mx, _, mw, _ := g.menuItemRect(1)
+		if mouse.X >= float32(mx)+float32(mw)*0.5 {
+			g.SongRepeat = !g.SongRepeat
+		} else {
+			g.toggleMusicEnabled()
+		}
+	} else if rl.IsKeyPressed(rl.KeyRight) {
+		g.SongRepeat = !g.SongRepeat
+	} else if rl.IsKeyPressed(rl.KeyEnter) || rl.IsKeyPressed(rl.KeyX) || rl.IsKeyPressed(rl.KeyLeft) {
+		g.toggleMusicEnabled()
+	}
+}
+
+func (g *Game) updateSongOption() {
+	if len(g.Songs) == 0 {
+		return
+	}
+	g.cyclePick(2, func(dir int) {
+		if dir > 0 {
+			g.NextSong()
+		} else {
+			g.PlaySong((g.SongIndex - 1 + len(g.Songs)) % len(g.Songs))
+		}
+	})
+}
+
+func (g *Game) updateQuitOption() {
+	if !activatePressed() {
+		return
+	}
+	if g.State == StatePlaying || (g.State == StateGameOver && g.Won) {
+		g.SaveGame()
+	}
+	g.SaveOptions()
+	rl.CloseWindow()
+	os.Exit(0)
 }
 
 func (g *Game) updateThreatSlider(mouse rl.Vector2) {
