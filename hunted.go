@@ -2051,66 +2051,18 @@ func Follow(g *Game, p *GameObject) int {
 	return ret
 }
 
-// FollowPath is the waif AI controller that uses the Path grid
-func FollowPath(g *Game, p *GameObject) int {
-	px, py := int(p.X), int(p.Y)
+// dirToward returns direction bits pointing from (px,py) toward (tx,ty).
+func dirToward(px, py, tx, ty int) int {
+	return cond(tx < px, DirLeft, cond(tx > px, DirRight, 0)) |
+		cond(ty < py, DirUp, cond(ty > py, DirDown, 0))
+}
 
-	// At or past finish line, or game won - just go right
-	if px >= FinishLine || g.Won {
-		return DirRight
-	}
-
-	// Not playing - head right and center vertically around y=80
-	if !g.Playing {
-		ret := DirRight
-		if py > 80 {
-			ret |= DirUp
-		} else if py < 78 {
-			ret |= DirDown
-		}
-		return ret
-	}
-
-	// Need player reference for pathfinding
-	if g.Player == nil {
-		return DirRight
-	}
-
-	tx := int(g.Player.X) + g.Player.XOff
-	ty := int(g.Player.Y) + g.Player.YOff
-
-	// If too far from player (beyond screen width), use simple direction towards player
-	if abs(tx-px) >= GameWidth {
-		var ret int
-		if px < tx {
-			ret |= DirRight
-		} else {
-			ret |= DirLeft
-		}
-		if py < ty {
-			ret |= DirDown
-		} else if py > ty {
-			ret |= DirUp
-		}
-		p.Dot = ret
-		return ret
-	}
-
-	// Use Path grid for navigation
-	// Calculate map column offset based on player position (same as UpdatePath)
-	mapC := max(0, tx-GameWidth) / TileSize
-
-	// Calculate object's position in the path grid (1-indexed like Lua)
-	c := (px-mapC*TileSize)/TileSize + 1
-	r := py/TileSize + 1
-
-	// Get current path value, default to MaxN if out of bounds
+// bestPathNeighbor finds the neighboring cell with the minimum path value.
+func (g *Game) bestPathNeighbor(c, r int) (int, int, int) {
 	pmin := MaxN
 	if c >= 1 && c <= 32 && r >= 1 && r <= 20 {
 		pmin = g.Path[c-1][r-1]
 	}
-
-	// Find neighboring cell with minimum path value
 	nc, nr := c, r
 	for i := max(1, c-1); i <= min(32, c+1); i++ {
 		for j := max(1, r-1); j <= min(20, r+1); j++ {
@@ -2120,12 +2072,43 @@ func FollowPath(g *Game, p *GameObject) int {
 			}
 		}
 	}
+	return nc, nr, pmin
+}
 
-	// Calculate target position from the best cell
+// FollowPath is the waif AI controller that uses the Path grid
+func FollowPath(g *Game, p *GameObject) int {
+	px, py := int(p.X), int(p.Y)
+
+	if px >= FinishLine || g.Won {
+		return DirRight
+	}
+	if !g.Playing {
+		return DirRight | cond(py > 80, DirUp, cond(py < 78, DirDown, 0))
+	}
+	if g.Player == nil {
+		return DirRight
+	}
+
+	tx := int(g.Player.X) + g.Player.XOff
+	ty := int(g.Player.Y) + g.Player.YOff
+
+	// Too far from player — use simple direction
+	if abs(tx-px) >= GameWidth {
+		ret := dirToward(px, py, tx, ty)
+		p.Dot = ret
+		return ret
+	}
+
+	// Use Path grid for navigation
+	mapC := max(0, tx-GameWidth) / TileSize
+	c := (px-mapC*TileSize)/TileSize + 1
+	r := py/TileSize + 1
+	nc, nr, pmin := g.bestPathNeighbor(c, r)
+
 	nx := float64((mapC + nc - 1) * TileSize)
 	ny := float64((nr - 1) * TileSize)
 
-	// If very close to player (pmin <= 1), add jitter to avoid stacking on player
+	// Jitter when close to player to avoid stacking
 	if pmin <= 1 {
 		if p.JitterTime == 0 {
 			p.JitterX = float64(g.Rng.Intn(g.WaifJitterPx*2+1) - g.WaifJitterPx)
@@ -2140,19 +2123,7 @@ func FollowPath(g *Game, p *GameObject) int {
 		p.JitterTime = 0
 	}
 
-	// Calculate direction towards target
-	var ret int
-	if nx < float64(px) {
-		ret |= DirLeft
-	} else if nx > float64(px) {
-		ret |= DirRight
-	}
-	if ny < float64(py) {
-		ret |= DirUp
-	} else if ny > float64(py) {
-		ret |= DirDown
-	}
-
+	ret := dirToward(px, py, int(nx), int(ny))
 	p.Dot = ret
 	return ret
 }
