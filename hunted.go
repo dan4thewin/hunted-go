@@ -2808,65 +2808,30 @@ func (g *Game) UpdateTitle() {
 		g.TitleMenuIndex = 0
 	}
 
-	mouse := rl.GetMousePosition()
+	g.menuNav(&g.TitleMenuIndex, menuCount, g.titleMenuRect)
 
-	// Arrow navigation — checked first so keyboard takes priority
-	if rl.IsKeyPressed(rl.KeyUp) {
-		g.TitleMenuIndex = (g.TitleMenuIndex - 1 + menuCount) % menuCount
-	} else if rl.IsKeyPressed(rl.KeyDown) {
-		g.TitleMenuIndex = (g.TitleMenuIndex + 1) % menuCount
-	} else if g.mouseMoved(mouse) {
-		// Mouse hover on title menu — only when mouse moved and within margin
-		scale := float32(g.WindowSize) / 512.0
-		margin := float32(19 * scale) // ~0.5 cm dead zone
-		firstX, firstY, firstW, _ := g.titleMenuRect(0)
-		_, lastY, _, lastH := g.titleMenuRect(menuCount - 1)
-		if mouse.X >= float32(firstX)-margin && mouse.X <= float32(firstX+firstW)+margin &&
-			mouse.Y >= float32(firstY)-margin && mouse.Y <= float32(lastY+lastH)+margin {
-			for i := 0; i < menuCount; i++ {
-				_, itemY, _, itemH := g.titleMenuRect(i)
-				if mouse.Y >= float32(itemY) && mouse.Y < float32(itemY+itemH) {
-					if g.TitleMenuIndex != i {
-						g.TitleMenuIndex = i
-					}
-					break
-				}
-			}
-		}
+	if !activatePressed() {
+		return
 	}
 
-	enterPressed := rl.IsKeyPressed(rl.KeyEnter) || rl.IsKeyPressed(rl.KeyX)
-	clicked := rl.IsMouseButtonPressed(rl.MouseLeftButton)
-
-	label := labels[g.TitleMenuIndex]
-	switch label {
+	switch labels[g.TitleMenuIndex] {
 	case "Continue":
-		if enterPressed || clicked {
-			if err := g.LoadGame(); err != nil {
-				fmt.Printf("Failed to load: %v\n", err)
-			}
+		if err := g.LoadGame(); err != nil {
+			fmt.Printf("Failed to load: %v\n", err)
 		}
 	case "Start":
-		if enterPressed || clicked {
-			if g.FirstLaunch {
-				g.FirstLaunch = false
-				g.ShowHelp = true
-			}
-			g.StartGame()
+		if g.FirstLaunch {
+			g.FirstLaunch = false
+			g.ShowHelp = true
 		}
+		g.StartGame()
 	case "Options":
-		if enterPressed || clicked {
-			g.Paused = true
-		}
+		g.Paused = true
 	case "Credits":
-		if enterPressed || clicked {
-			g.ShowCredits = true
-		}
+		g.ShowCredits = true
 	case "Quit":
-		if enterPressed || clicked {
-			rl.CloseWindow()
-			os.Exit(0)
-		}
+		rl.CloseWindow()
+		os.Exit(0)
 	}
 }
 
