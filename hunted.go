@@ -1657,118 +1657,145 @@ func (g *Game) Walk(p *GameObject, dir int) bool {
 	return g.walk(p, dir, false)
 }
 
+// --- Walk helpers ---
+//
+//   dirDelta   — maps a direction bitmask to (dx, dy) unit vector
+//   snapDiag   — snaps position to grid when entering diagonal movement
+//   bounceDir  — computes new direction after hitting an obstacle
+//   slideWalk  — tries sliding around corners on cardinal movement
+
+func dirDelta(dir int) (float64, float64, bool) {
+	switch dir {
+	case DirLeft:
+		return -1, 0, true
+	case DirRight:
+		return 1, 0, true
+	case DirUp:
+		return 0, -1, true
+	case DirDown:
+		return 0, 1, true
+	case DirLeft | DirUp:
+		return -0.7, -0.7, true
+	case DirRight | DirUp:
+		return 0.7, -0.7, true
+	case DirLeft | DirDown:
+		return -0.7, 0.7, true
+	case DirRight | DirDown:
+		return 0.7, 0.7, true
+	}
+	return 0, 0, false
+}
+
+func snapDiag(p *GameObject, x, y float64) {
+	if x == 0 || y == 0 {
+		p.Diag = false
+		return
+	}
+	if p.Diag {
+		return
+	}
+	snapX, snapY := math.Floor, math.Floor
+	if x < 0 {
+		snapX = math.Ceil
+	}
+	if y < 0 {
+		snapY = math.Ceil
+	}
+	p.X = snapX(p.X)
+	p.Y = snapY(p.Y)
+	p.Diag = true
+}
+
+func cond[T any](b bool, t, f T) T {
+	if b {
+		return t
+	}
+	return f
+}
+
+func (g *Game) bounceDir(p *GameObject, dir int, lx, ly, nx, ny float64) int {
+	lr := dir & (DirLeft | DirRight)
+	ud := dir & (DirUp | DirDown)
+	// lr and ud are each a single bit or zero; XOR swaps Left↔Right / Up↔Down
+	flipLR := cond(lr != 0, (DirLeft|DirRight)^lr, 0)
+	flipUD := cond(ud != 0, (DirUp|DirDown)^ud, 0)
+	if !p.Diag {
+		return flipLR | flipUD
+	}
+	if g.Obstacle(p, 0, 0, &lx, &ny) {
+		return lr | flipUD
+	}
+	if g.Obstacle(p, 0, 0, &nx, &ly) {
+		return flipLR | ud
+	}
+	return lr | ud
+}
+
+// slideAxis checks one axis for obstacle and attempts to slide perpendicular.
+// move/fixed are the movement/stationary coords; posDir/negDir are the slide directions.
+func (g *Game) slideAxis(p *GameObject, otherDelta float64, move, fixed, fallback float64,
+	obstA, obstB *float64, posDir, negDir int) (float64, bool, bool) {
+	if !g.Obstacle(p, 0, 0, obstA, obstB) {
+		return move, false, false
+	}
+	if otherDelta == 0 {
+		testPos := fixed + 3
+		if !g.Obstacle(p, 0, 0, &testPos, obstB) {
+			return move, true, g.walk(p, posDir, true)
+		}
+		testNeg := fixed - 3
+		if !g.Obstacle(p, 0, 0, &testNeg, obstB) {
+			return move, true, g.walk(p, negDir, true)
+		}
+	}
+	return fallback, false, false
+}
+
+func (g *Game) slideWalk(p *GameObject, x, y, lx, ly, nx, ny float64) (float64, float64, bool, bool) {
+	if y != 0 {
+		ny, slid, result := g.slideAxis(p, x, ny, lx, ly, &lx, &ny, DirRight, DirLeft)
+		if slid {
+			return nx, ny, true, result
+		}
+		_ = ny
+	}
+	if x != 0 {
+		nx, slid, result := g.slideAxis(p, y, nx, ly, lx, &nx, &ly, DirDown, DirUp)
+		if slid {
+			return nx, ny, true, result
+		}
+		_ = nx
+	}
+	return nx, ny, false, false
+}
+
 func (g *Game) walk(p *GameObject, dir int, slide bool) bool {
 	for attempt := 0; ; attempt++ {
-		var x, y float64
-		switch dir {
-		case DirLeft:
-			x = -1
-		case DirRight:
-			x = 1
-		case DirUp:
-			y = -1
-		case DirDown:
-			y = 1
-		case DirLeft | DirUp:
-			x, y = -0.7, -0.7
-		case DirRight | DirUp:
-			x, y = 0.7, -0.7
-		case DirLeft | DirDown:
-			x, y = -0.7, 0.7
-		case DirRight | DirDown:
-			x, y = 0.7, 0.7
-		default:
+		x, y, ok := dirDelta(dir)
+		if !ok {
 			return false
 		}
-
-		if x != 0 && y != 0 {
-			if !p.Diag {
-				// Snap away from movement direction
-				snapX, snapY := math.Floor, math.Floor
-				if x < 0 {
-					snapX = math.Ceil
-				}
-				if y < 0 {
-					snapY = math.Ceil
-				}
-				p.X = snapX(p.X)
-				p.Y = snapY(p.Y)
-				p.Diag = true
-			}
-		} else {
-			p.Diag = false
-		}
+		snapDiag(p, x, y)
 
 		lx, ly := p.X, p.Y
 		s := p.Speed
-
-		// Using Go 1.25 builtin min/max
 		ny := max(float64(p.YMin), min(ly+y*s, float64(p.YMax)))
 		nx := max(0, min(lx+x*s, float64(p.XMaxLimit)))
 
 		if p.Bounce && g.Obstacle(p, 0, 0, &nx, &ny) {
 			if attempt > 0 {
-				// Already bounced once — stop to avoid infinite loop
 				return false
 			}
-			lr := dir & (DirLeft | DirRight)
-			ud := dir & (DirUp | DirDown)
-			if !p.Diag {
-				switch lr {
-				case DirLeft:
-					lr = DirRight
-				case DirRight:
-					lr = DirLeft
-				}
-				switch ud {
-				case DirUp:
-					ud = DirDown
-				case DirDown:
-					ud = DirUp
-				}
-			} else if g.Obstacle(p, 0, 0, &lx, &ny) {
-				switch ud {
-				case DirUp:
-					ud = DirDown
-				case DirDown:
-					ud = DirUp
-				}
-			} else if g.Obstacle(p, 0, 0, &nx, &ly) {
-				switch lr {
-				case DirLeft:
-					lr = DirRight
-				case DirRight:
-					lr = DirLeft
-				}
-			}
-			dir = lr | ud
+			dir = g.bounceDir(p, dir, lx, ly, nx, ny)
 			p.Dir = dir
-			continue // retry with bounced direction
+			continue
 		}
 
-		// Slide around corners (disabled on recursive slide calls)
 		if !slide {
-			if y != 0 && g.Obstacle(p, 0, 0, &lx, &ny) {
-				testX := lx + 3
-				if x == 0 && !g.Obstacle(p, 0, 0, &testX, &ny) {
-					return g.walk(p, DirRight, true)
-				}
-				testX = lx - 3
-				if x == 0 && !g.Obstacle(p, 0, 0, &testX, &ny) {
-					return g.walk(p, DirLeft, true)
-				}
-				ny = ly
-			}
-			if x != 0 && g.Obstacle(p, 0, 0, &nx, &ly) {
-				testY := ly + 3
-				if y == 0 && !g.Obstacle(p, 0, 0, &nx, &testY) {
-					return g.walk(p, DirDown, true)
-				}
-				testY = ly - 3
-				if y == 0 && !g.Obstacle(p, 0, 0, &nx, &testY) {
-					return g.walk(p, DirUp, true)
-				}
-				nx = lx
+			var slid, result bool
+			nx, ny, slid, result = g.slideWalk(p, x, y, lx, ly, nx, ny)
+			if slid {
+				return result
 			}
 		}
 
@@ -1779,7 +1806,6 @@ func (g *Game) walk(p *GameObject, dir int, slide bool) bool {
 
 		q := g.MobCollide(p, nx, ny)
 		if q != nil {
-			//g.Log(fmt.Sprintf("bumped %s%d", q.Name, q.ID), p)
 			return false
 		}
 
