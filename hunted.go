@@ -362,10 +362,7 @@ func (g *Game) HandleResize() {
 	height := int32(rl.GetScreenHeight())
 
 	// Use the smaller dimension to maintain square aspect ratio
-	newSize := width
-	if height < width {
-		newSize = height
-	}
+	newSize := cond(height < width, height, width)
 
 	g.WindowSize = newSize
 	// Update camera zoom to fit the visible area in the new window size
@@ -886,85 +883,7 @@ func (g *Game) LoadGame() error {
 
 	// Row 2 = object header, Row 3+ = objects
 	for _, row := range rows[3:] {
-		if len(row) < 26 {
-			continue
-		}
-		name := row[0]
-		def := g.Defs[name]
-		if def == nil {
-			fmt.Printf("load game: unknown sprite %q, skipping\n", name)
-			continue
-		}
-
-		x, _ := strconv.ParseFloat(row[1], 64)
-		y, _ := strconv.ParseFloat(row[2], 64)
-		speed, _ := strconv.ParseFloat(row[3], 64)
-		baseSpeed, _ := strconv.ParseFloat(row[4], 64)
-		dir, _ := strconv.Atoi(row[5])
-		lastDir, _ := strconv.Atoi(row[6])
-		flip, _ := strconv.ParseBool(row[7])
-		armed, _ := strconv.ParseBool(row[8])
-		ignore, _ := strconv.ParseBool(row[9])
-		threat, _ := strconv.ParseFloat(row[10], 64)
-		invulnCount, _ := strconv.Atoi(row[11])
-		isInvuln, _ := strconv.ParseBool(row[12])
-		palIndex, _ := strconv.Atoi(row[13])
-		palSwap, _ := strconv.ParseBool(row[14])
-		poseIndex, _ := strconv.Atoi(row[15])
-		frameCount, _ := strconv.Atoi(row[16])
-		currentSprite, _ := strconv.Atoi(row[17])
-		isIdle, _ := strconv.ParseBool(row[18])
-		currentFrames, _ := strconv.Atoi(row[19])
-		delay, _ := strconv.Atoi(row[20])
-		spotted, _ := strconv.ParseBool(row[21])
-		scored, _ := strconv.ParseBool(row[22])
-		jitterX, _ := strconv.ParseFloat(row[23], 64)
-		jitterY, _ := strconv.ParseFloat(row[24], 64)
-		jitterTime, _ := strconv.Atoi(row[25])
-
-		obj := g.Emplace(def, x, y)
-		obj.Speed = speed
-		obj.BaseSpeed = baseSpeed
-		obj.Dir = dir
-		obj.LastDir = lastDir
-		obj.Flip = flip
-		obj.Armed = armed
-		obj.Ignore = ignore
-		obj.Threat = threat
-		obj.InvulnCount = invulnCount
-		obj.IsInvuln = isInvuln
-		obj.PalIndex = palIndex
-		obj.PalSwap = palSwap
-		obj.PoseIndex = poseIndex
-		obj.FrameCount = frameCount
-		obj.CurrentSprite = currentSprite
-		obj.IsIdle = isIdle
-		obj.CurrentFrames = currentFrames
-		obj.Delay = delay
-		obj.Spotted = spotted
-		obj.Scored = scored
-		obj.JitterX = jitterX
-		obj.JitterY = jitterY
-		obj.JitterTime = jitterTime
-
-		// Re-attach controllers based on Kind
-		switch obj.Kind {
-		case Player:
-			obj.Controller = PlayerInput
-			obj.PostMove = PlayerPostMove
-			obj.PathC = -1
-			obj.PathR = -1
-			g.Player = obj
-		case Thug:
-			obj.Controller = Follow
-			obj.XMaxLimit = FinishLine - obj.Width - obj.XOff
-		case Waif:
-			obj.Controller = FollowPath
-			obj.PostMove = WaifPostMove
-			if obj.Delay > 0 {
-				obj.PreAct = SlowStart
-			}
-		}
+		g.loadObject(row)
 	}
 
 	if g.Player != nil {
@@ -974,6 +893,88 @@ func (g *Game) LoadGame() error {
 	os.Remove(g.savePath())
 	fmt.Println("Game loaded")
 	return nil
+}
+
+func (g *Game) loadObject(row []string) {
+	if len(row) < 26 {
+		return
+	}
+	name := row[0]
+	def := g.Defs[name]
+	if def == nil {
+		fmt.Printf("load game: unknown sprite %q, skipping\n", name)
+		return
+	}
+
+	x, _ := strconv.ParseFloat(row[1], 64)
+	y, _ := strconv.ParseFloat(row[2], 64)
+	speed, _ := strconv.ParseFloat(row[3], 64)
+	baseSpeed, _ := strconv.ParseFloat(row[4], 64)
+	dir, _ := strconv.Atoi(row[5])
+	lastDir, _ := strconv.Atoi(row[6])
+	flip, _ := strconv.ParseBool(row[7])
+	armed, _ := strconv.ParseBool(row[8])
+	ignore, _ := strconv.ParseBool(row[9])
+	threat, _ := strconv.ParseFloat(row[10], 64)
+	invulnCount, _ := strconv.Atoi(row[11])
+	isInvuln, _ := strconv.ParseBool(row[12])
+	palIndex, _ := strconv.Atoi(row[13])
+	palSwap, _ := strconv.ParseBool(row[14])
+	poseIndex, _ := strconv.Atoi(row[15])
+	frameCount, _ := strconv.Atoi(row[16])
+	currentSprite, _ := strconv.Atoi(row[17])
+	isIdle, _ := strconv.ParseBool(row[18])
+	currentFrames, _ := strconv.Atoi(row[19])
+	delay, _ := strconv.Atoi(row[20])
+	spotted, _ := strconv.ParseBool(row[21])
+	scored, _ := strconv.ParseBool(row[22])
+	jitterX, _ := strconv.ParseFloat(row[23], 64)
+	jitterY, _ := strconv.ParseFloat(row[24], 64)
+	jitterTime, _ := strconv.Atoi(row[25])
+
+	obj := g.Emplace(def, x, y)
+	obj.Speed = speed
+	obj.BaseSpeed = baseSpeed
+	obj.Dir = dir
+	obj.LastDir = lastDir
+	obj.Flip = flip
+	obj.Armed = armed
+	obj.Ignore = ignore
+	obj.Threat = threat
+	obj.InvulnCount = invulnCount
+	obj.IsInvuln = isInvuln
+	obj.PalIndex = palIndex
+	obj.PalSwap = palSwap
+	obj.PoseIndex = poseIndex
+	obj.FrameCount = frameCount
+	obj.CurrentSprite = currentSprite
+	obj.IsIdle = isIdle
+	obj.CurrentFrames = currentFrames
+	obj.Delay = delay
+	obj.Spotted = spotted
+	obj.Scored = scored
+	obj.JitterX = jitterX
+	obj.JitterY = jitterY
+	obj.JitterTime = jitterTime
+
+	// Re-attach controllers based on Kind
+	switch obj.Kind {
+	case Player:
+		obj.Controller = PlayerInput
+		obj.PostMove = PlayerPostMove
+		obj.PathC = -1
+		obj.PathR = -1
+		g.Player = obj
+	case Thug:
+		obj.Controller = Follow
+		obj.XMaxLimit = FinishLine - obj.Width - obj.XOff
+	case Waif:
+		obj.Controller = FollowPath
+		obj.PostMove = WaifPostMove
+		if obj.Delay > 0 {
+			obj.PreAct = SlowStart
+		}
+	}
 }
 
 // SpriteDefYAML is the YAML representation of a sprite definition
@@ -1022,10 +1023,7 @@ func parseKind(s string) Kind {
 }
 
 func (y *SpriteDefYAML) toSpriteDef(key string) *SpriteDef {
-	name := y.Name
-	if name == "" {
-		name = key
-	}
+	name := cond(y.Name != "", y.Name, key)
 	return &SpriteDef{
 		Name:         name,
 		Idle:         y.Idle,
@@ -1385,6 +1383,13 @@ func Distance(a, b *GameObject) float64 {
 }
 
 // Input handles player input
+func readDirKeys() int {
+	return cond(rl.IsKeyDown(rl.KeyLeft) || rl.IsKeyDown(rl.KeyA), DirLeft, 0) |
+		cond(rl.IsKeyDown(rl.KeyRight) || rl.IsKeyDown(rl.KeyD), DirRight, 0) |
+		cond(rl.IsKeyDown(rl.KeyUp) || rl.IsKeyDown(rl.KeyW), DirUp, 0) |
+		cond(rl.IsKeyDown(rl.KeyDown) || rl.IsKeyDown(rl.KeyS), DirDown, 0)
+}
+
 func PlayerInput(g *Game, p *GameObject) int {
 	if p.X > XMax {
 		return 0
@@ -1393,19 +1398,7 @@ func PlayerInput(g *Game, p *GameObject) int {
 		return DirRight
 	}
 
-	var dir int
-	if rl.IsKeyDown(rl.KeyLeft) || rl.IsKeyDown(rl.KeyA) {
-		dir |= DirLeft
-	}
-	if rl.IsKeyDown(rl.KeyRight) || rl.IsKeyDown(rl.KeyD) {
-		dir |= DirRight
-	}
-	if rl.IsKeyDown(rl.KeyUp) || rl.IsKeyDown(rl.KeyW) {
-		dir |= DirUp
-	}
-	if rl.IsKeyDown(rl.KeyDown) || rl.IsKeyDown(rl.KeyS) {
-		dir |= DirDown
-	}
+	dir := readDirKeys()
 
 	// Debug: Left+Right spawns a waif
 	if g.Debug > 0 && dir&(DirLeft|DirRight) == (DirLeft|DirRight) {
@@ -1424,17 +1417,12 @@ func PlayerInput(g *Game, p *GameObject) int {
 		p.LastDir = dir
 	}
 
-	// Dash on Z
 	if rl.IsKeyPressed(rl.KeyZ) && p.Poses2 != nil {
 		p.SetDashing()
 	}
-
-	// Bomb on X (tap)
 	if rl.IsKeyPressed(rl.KeyX) {
 		g.ThrowBomb(p)
 	}
-
-	// Mine on C
 	if rl.IsKeyPressed(rl.KeyC) {
 		g.PlaceMine(p)
 	}
@@ -1598,26 +1586,29 @@ func (g *Game) Hazard2(p *GameObject, filter func(*GameObject) bool) (u, r, d, l
 
 // innerFollow returns direction toward target, checking obstacles and avoidable hazards.
 // hasLast indicates the target is a breadcrumb with a predecessor (triggers arrival detection).
+// followAxis returns a direction bit for one axis: if target < pos and the
+// negative direction is clear, returns negDir; if target > pos and the
+// positive direction is clear, returns posDir; otherwise 0.
+func (g *Game) followAxis(p *GameObject, target, pos int, hNeg, hPos *GameObject,
+	dx1, dy1, dx2, dy2 float64, negDir, posDir int) int {
+	if target < pos && hNeg == nil && !g.Obstacle(p, dx1, dy1, nil, nil) {
+		return negDir
+	}
+	if target > pos && hPos == nil && !g.Obstacle(p, dx2, dy2, nil, nil) {
+		return posDir
+	}
+	return 0
+}
+
 func (g *Game) innerFollow(p *GameObject, tx, ty float64, hasLast bool) (int, bool) {
 	x, y := int(p.X), int(p.Y)
 	itx, ity := int(tx), int(ty)
 	if hasLast && itx == x && ity == y {
 		return 0, true
 	}
-
 	hu, hr, hd, hl := g.Hazard2(p, AvoidFilter)
-
-	var bits int
-	if itx < x && hl == nil && !g.Obstacle(p, -1, 0, nil, nil) {
-		bits |= DirLeft
-	} else if itx > x && hr == nil && !g.Obstacle(p, 1, 0, nil, nil) {
-		bits |= DirRight
-	}
-	if ity < y && hu == nil && !g.Obstacle(p, 0, -1, nil, nil) {
-		bits |= DirUp
-	} else if ity > y && hd == nil && !g.Obstacle(p, 0, 1, nil, nil) {
-		bits |= DirDown
-	}
+	bits := g.followAxis(p, itx, x, hl, hr, -1, 0, 1, 0, DirLeft, DirRight) |
+		g.followAxis(p, ity, y, hu, hd, 0, -1, 0, 1, DirUp, DirDown)
 	return bits, false
 }
 
@@ -1835,17 +1826,12 @@ func (g *Game) Act(p *GameObject) bool {
 	if dir == 0 {
 		p.Speed = max(0, p.Speed-g.SpeedDecayPxf)
 	} else {
-		base := p.BaseSpeed
-		if p.Kind == Thug && g.Mode == 2 {
-			base *= g.RelaxedSpeedX
-		}
+		base := cond(p.Kind == Thug && g.Mode == 2, p.BaseSpeed*g.RelaxedSpeedX, p.BaseSpeed)
 		p.Speed = max(base, p.Speed-g.SpeedDecayPxf)
 
-		switch dir & (DirLeft | DirRight) {
-		case DirLeft:
-			p.Flip = true
-		case DirRight:
-			p.Flip = false
+		lr := dir & (DirLeft | DirRight)
+		if lr != 0 {
+			p.Flip = lr == DirLeft
 		}
 
 		if g.Walk(p, dir) {
@@ -2030,25 +2016,29 @@ func Follow(g *Game, p *GameObject) int {
 
 	// Stuck - try following the player's breadcrumb trail
 	if g.Playing && ret == 0 && len(g.Crumbs) > 0 {
-		var c *Crumb
-		if p.TargetCrumb != nil {
-			c = p.TargetCrumb.Last
-		}
-		if c == nil {
-			c = g.Crumbs[len(g.Crumbs)-1]
-		}
-		for c != nil {
-			ret, _ = g.innerFollow(p, c.X, c.Y, c.Last != nil)
-			if ret != 0 {
-				break
-			}
-			c = c.Last
-		}
-		p.TargetCrumb = c
+		ret, p.TargetCrumb = g.followCrumbs(p)
 	}
 
 	p.Dot = ret
 	return ret
+}
+
+func (g *Game) followCrumbs(p *GameObject) (int, *Crumb) {
+	c := p.TargetCrumb
+	if c != nil {
+		c = c.Last
+	}
+	if c == nil {
+		c = g.Crumbs[len(g.Crumbs)-1]
+	}
+	for c != nil {
+		ret, _ := g.innerFollow(p, c.X, c.Y, c.Last != nil)
+		if ret != 0 {
+			return ret, c
+		}
+		c = c.Last
+	}
+	return 0, nil
 }
 
 // dirToward returns direction bits pointing from (px,py) toward (tx,ty).
@@ -2720,10 +2710,7 @@ func (g *Game) menuItemRect(index int) (int32, int32, int32, int32) {
 func (g *Game) titleMenuRect(index int) (int32, int32, int32, int32) {
 	scale := float32(g.WindowSize) / 512.0
 	menuCount := len(g.titleMenuLabels())
-	rowH := int32(50 * scale)
-	if menuCount > 4 {
-		rowH = int32(40 * scale)
-	}
+	rowH := cond(menuCount > 4, int32(40*scale), int32(50*scale))
 	menuX := int32(140 * scale)
 	menuW := g.WindowSize - 2*menuX
 	baseY := int32(float32(g.WindowSize)/2 + 40*scale)
@@ -3205,10 +3192,7 @@ func (g *Game) DrawTitle() {
 			rl.DrawRectangle(menuX, y, menuW, rowH, HighlightOrange)
 		}
 
-		color := PicoBrown
-		if selected {
-			color = PicoOrange
-		}
+		color := cond(selected, PicoOrange, PicoBrown)
 
 		lx := float32(menuX) + float32(menuW)/2 - 40*scale
 		ly := float32(y) + float32(rowH-int32(40*scale))/2
@@ -3481,10 +3465,7 @@ var (
 // DrawUI draws the user interface in screen coordinates
 func (g *Game) DrawUI() {
 	scale := float32(g.WindowSize) / VisibleSize
-	color := PicoOrange
-	if !g.Playing {
-		color = PicoBrown
-	}
+	color := cond(g.Playing, PicoOrange, PicoBrown)
 
 	// Score
 	fontSize := float32(TileSize) * scale
@@ -3494,10 +3475,7 @@ func (g *Game) DrawUI() {
 	heartSprite := g.DefHeart.Idle[0]
 	for i := 1; i <= 3; i++ {
 		x := float32(20 + i*8)
-		sprIdx := heartSprite + 1 // empty heart
-		if i < g.HeartCount {
-			sprIdx = heartSprite
-		}
+		sprIdx := cond(i < g.HeartCount, heartSprite, heartSprite+1)
 		g.DrawSpriteUI(sprIdx, x, -1)
 	}
 	// Plus sign if hearts > 4
