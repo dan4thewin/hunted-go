@@ -2328,27 +2328,29 @@ func (g *Game) Populate(x float64, factor float64) {
 		if g.TileMap[r][c] != 0 {
 			continue
 		}
-
 		g.TileMap[r][c] = g.randomFloorTile(g.Rng)
-
-		// Only spawn objects outside nopop zone
 		if c < px-nopL || c > px+nopR || r < py-nopU || r > py+nopD {
-			added := false
-			if g.Threat < g.ThreatMax*factor {
-				idx := g.Rng.Intn(len(g.Thugs)-1) + 1 // skip mech (index 0) due to 16x16
-				def := g.Thugs[idx]
-				added = g.Spawn(def, float64(c*TileSize), float64(r*TileSize), factor)
-			}
-			if !added && r > 1 && r < 18 {
-				n := g.Rng.Float64() * 100
-				if n < g.CratePct {
-					g.Emplace(g.DefCrate, float64(c*TileSize), float64(r*TileSize))
-				} else if n < g.CratePct+g.RockPct {
-					g.TileMap[r][c] = g.RockTile
-				} else if n < g.CratePct+g.RockPct+g.JunkPct {
-					g.Emplace(g.DefJunk, float64(c*TileSize), float64(r*TileSize))
-				}
-			}
+			g.populateTile(c, r, factor)
+		}
+	}
+}
+
+func (g *Game) populateTile(c, r int, factor float64) {
+	if g.Threat < g.ThreatMax*factor {
+		idx := g.Rng.Intn(len(g.Thugs)-1) + 1
+		def := g.Thugs[idx]
+		if g.Spawn(def, float64(c*TileSize), float64(r*TileSize), factor) {
+			return
+		}
+	}
+	if r > 1 && r < 18 {
+		n := g.Rng.Float64() * 100
+		if n < g.CratePct {
+			g.Emplace(g.DefCrate, float64(c*TileSize), float64(r*TileSize))
+		} else if n < g.CratePct+g.RockPct {
+			g.TileMap[r][c] = g.RockTile
+		} else if n < g.CratePct+g.RockPct+g.JunkPct {
+			g.Emplace(g.DefJunk, float64(c*TileSize), float64(r*TileSize))
 		}
 	}
 }
