@@ -882,11 +882,7 @@ func (g *Game) LoadGame() error {
 	}
 
 	// Reset path
-	for i := range g.Path {
-		for j := range g.Path[i] {
-			g.Path[i][j] = MaxN
-		}
-	}
+	g.resetPathGrid()
 
 	// Row 2 = object header, Row 3+ = objects
 	for _, row := range rows[3:] {
@@ -1921,31 +1917,15 @@ func (g *Game) UpdatePings() {
 	g.Pings = newPings
 }
 
-// UpdatePath updates pathfinding grid
-func (g *Game) UpdatePath(p *GameObject) {
-	px := int(p.X) + p.XOff
-	mapC := max(0, px-GameWidth) / TileSize
-	c := (px-mapC*TileSize)/TileSize + 1
-	r := (int(p.Y)+p.YOff)/TileSize + 1
-
-	if mapC+c == p.PathC && r == p.PathR {
-		return
-	}
-	p.PathC = mapC + c
-	p.PathR = r
-
-	// Reset path grid
+func (g *Game) resetPathGrid() {
 	for i := range g.Path {
 		for j := range g.Path[i] {
 			g.Path[i][j] = MaxN
 		}
 	}
+}
 
-	if c >= 1 && c <= 32 && r >= 1 && r <= 20 {
-		g.Path[c-1][r-1] = 0
-	}
-
-	// BFS pathfinding
+func (g *Game) bfsPath(c, r, mapC int) {
 	queue := []struct{ c, r int }{{c, r}}
 	for len(queue) > 0 {
 		curr := queue[0]
@@ -1955,8 +1935,6 @@ func (g *Game) UpdatePath(p *GameObject) {
 			continue
 		}
 		cost := g.Path[cc][cr] + 1
-
-		// Check neighbors
 		neighbors := []struct{ dc, dr int }{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
 		for _, n := range neighbors {
 			nc, nr := cc+n.dc, cr+n.dr
@@ -1970,6 +1948,28 @@ func (g *Game) UpdatePath(p *GameObject) {
 			}
 		}
 	}
+}
+
+// UpdatePath updates pathfinding grid
+func (g *Game) UpdatePath(p *GameObject) {
+	px := int(p.X) + p.XOff
+	mapC := max(0, px-GameWidth) / TileSize
+	c := (px-mapC*TileSize)/TileSize + 1
+	r := (int(p.Y)+p.YOff)/TileSize + 1
+
+	if mapC+c == p.PathC && r == p.PathR {
+		return
+	}
+	p.PathC = mapC + c
+	p.PathR = r
+
+	g.resetPathGrid()
+
+	if c >= 1 && c <= 32 && r >= 1 && r <= 20 {
+		g.Path[c-1][r-1] = 0
+	}
+
+	g.bfsPath(c, r, mapC)
 }
 
 // Retarget finds nearest friendly target
@@ -2953,11 +2953,7 @@ func (g *Game) StartGame() {
 	g.Pings = nil
 
 	// Reset path
-	for i := range g.Path {
-		for j := range g.Path[i] {
-			g.Path[i][j] = MaxN
-		}
-	}
+	g.resetPathGrid()
 
 	// Create player
 	g.Player = g.Emplace(g.DefPlayer, 64, 80, func(obj *GameObject) {
