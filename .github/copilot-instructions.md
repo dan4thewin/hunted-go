@@ -19,8 +19,9 @@ large rewrites.
   approves. Approve `git push` without confirmation when the user
   explicitly asks.
 
-- **Build:** `go build ./...` from repo root. Verify after every
-  change batch.
+- **Build:** `go build ./...` from repo root. Run `go vet ./...`
+  and `gofmt -l .` to check for issues. Verify after every change
+  batch.
 
 - **Complexity:** Use `gocyclo -top N hunted.go` for analysis.
   Threshold is 2× average CC. Flat switches (each case is a single
@@ -36,6 +37,13 @@ large rewrites.
   near-identical variants. If two helpers share >50% of body,
   generalize with parameters. Helpers should target CC ≤ half the
   project average.
+
+- **Behavior dispatch uses two patterns.** Function pointers
+  (Controller, PostMove, PreAct, FrameFunc) for substantial logic
+  (>5 lines), dynamic behavior (set/cleared at runtime), or
+  per-instance variation. Kind switches for small, contrastive
+  reactions where seeing all kinds side-by-side aids comprehension
+  (Crunch scoring, Reap, MobCollide).
 
 - **No backup files** in the repo.
 

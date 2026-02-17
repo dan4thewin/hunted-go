@@ -161,7 +161,6 @@ type GameObject struct {
 
 	// Invulnerability
 	InvulnFrames int
-	InvulnCount  int
 	IsInvuln     bool
 	PalIndex     int  // for waif recoloring
 	PalSwap      bool // draw with palette swap shader
@@ -802,7 +801,6 @@ func (g *Game) SaveGame() {
 			strconv.FormatBool(obj.Armed),
 			strconv.FormatBool(obj.Ignore),
 			strconv.FormatFloat(obj.Threat, 'f', -1, 64),
-			strconv.Itoa(obj.InvulnCount),
 			strconv.FormatBool(obj.IsInvuln),
 			strconv.Itoa(obj.PalIndex),
 			strconv.FormatBool(obj.PalSwap),
@@ -916,21 +914,20 @@ func (g *Game) loadObject(row []string) {
 	armed, _ := strconv.ParseBool(row[8])
 	ignore, _ := strconv.ParseBool(row[9])
 	threat, _ := strconv.ParseFloat(row[10], 64)
-	invulnCount, _ := strconv.Atoi(row[11])
-	isInvuln, _ := strconv.ParseBool(row[12])
-	palIndex, _ := strconv.Atoi(row[13])
-	palSwap, _ := strconv.ParseBool(row[14])
-	poseIndex, _ := strconv.Atoi(row[15])
-	frameCount, _ := strconv.Atoi(row[16])
-	currentSprite, _ := strconv.Atoi(row[17])
-	isIdle, _ := strconv.ParseBool(row[18])
-	currentFrames, _ := strconv.Atoi(row[19])
-	delay, _ := strconv.Atoi(row[20])
-	spotted, _ := strconv.ParseBool(row[21])
-	scored, _ := strconv.ParseBool(row[22])
-	jitterX, _ := strconv.ParseFloat(row[23], 64)
-	jitterY, _ := strconv.ParseFloat(row[24], 64)
-	jitterTime, _ := strconv.Atoi(row[25])
+	isInvuln, _ := strconv.ParseBool(row[11])
+	palIndex, _ := strconv.Atoi(row[12])
+	palSwap, _ := strconv.ParseBool(row[13])
+	poseIndex, _ := strconv.Atoi(row[14])
+	frameCount, _ := strconv.Atoi(row[15])
+	currentSprite, _ := strconv.Atoi(row[16])
+	isIdle, _ := strconv.ParseBool(row[17])
+	currentFrames, _ := strconv.Atoi(row[18])
+	delay, _ := strconv.Atoi(row[19])
+	spotted, _ := strconv.ParseBool(row[20])
+	scored, _ := strconv.ParseBool(row[21])
+	jitterX, _ := strconv.ParseFloat(row[22], 64)
+	jitterY, _ := strconv.ParseFloat(row[23], 64)
+	jitterTime, _ := strconv.Atoi(row[24])
 
 	obj := g.Emplace(def, x, y)
 	obj.Speed = speed
@@ -941,7 +938,6 @@ func (g *Game) loadObject(row []string) {
 	obj.Armed = armed
 	obj.Ignore = ignore
 	obj.Threat = threat
-	obj.InvulnCount = invulnCount
 	obj.IsInvuln = isInvuln
 	obj.PalIndex = palIndex
 	obj.PalSwap = palSwap
@@ -965,6 +961,9 @@ func (g *Game) loadObject(row []string) {
 		obj.PathC = -1
 		obj.PathR = -1
 		g.Player = obj
+		if obj.IsInvuln {
+			obj.PreAct = InvulnPreAct
+		}
 	case Thug:
 		obj.Controller = Follow
 		obj.XMaxLimit = FinishLine - obj.Width - obj.XOff
@@ -1535,23 +1534,23 @@ func (g *Game) Reap(p *GameObject) {
 	}
 }
 
+// InvulnPreAct decrements invulnerability timer each tick.
+// Returns true so Act continues (player keeps moving while invulnerable).
+func InvulnPreAct(g *Game, p *GameObject) bool {
+	if p.Delay == 0 {
+		p.IsInvuln = false
+		p.PreAct = nil
+	} else {
+		p.Delay--
+	}
+	return true
+}
+
 // StartInvuln makes player invulnerable
 func (g *Game) StartInvuln(p *GameObject) {
 	p.IsInvuln = true
-	p.InvulnCount = p.InvulnFrames
-}
-
-// UpdateInvuln updates invulnerability state
-func (g *Game) UpdateInvuln(p *GameObject) bool {
-	if !p.IsInvuln {
-		return true
-	}
-	if p.InvulnCount == 0 {
-		p.IsInvuln = false
-		return true
-	}
-	p.InvulnCount--
-	return true
+	p.Delay = p.InvulnFrames
+	p.PreAct = InvulnPreAct
 }
 
 // NoGhost filter for collision - returns true if object should be considered for collision
@@ -1807,12 +1806,9 @@ func (g *Game) Act(p *GameObject) bool {
 		return false
 	}
 
-	// Pre-action (invulnerability check)
+	// Pre-action hook (invulnerability countdown, waif slow start)
 	if p.PreAct != nil && !p.PreAct(g, p) {
 		return false
-	}
-	if p.IsInvuln {
-		g.UpdateInvuln(p)
 	}
 
 	// Get direction
@@ -3265,7 +3261,7 @@ func (g *Game) DrawGame() {
 		// Flash through lighter shades during invulnerability using shader
 		if obj.IsInvuln {
 			// Cycle brightness: use sine wave for smooth transition 0->1->0
-			phase := float32(obj.InvulnCount) * 0.15
+			phase := float32(obj.Delay) * 0.15
 			brightness := float32(math.Abs(math.Sin(float64(phase))))
 			rl.BeginShaderMode(g.InvulnShader)
 			rl.SetShaderValue(g.InvulnShader, g.BrightnessLoc, []float32{brightness}, rl.ShaderUniformFloat)
