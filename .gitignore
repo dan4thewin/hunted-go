@@ -10,13 +10,6 @@ hunted-go
 
 # Editor/OS
 .DS_Store
-chat.json
-tmux-dump
-
-# Backups
-*.bak
-*.bak2
-*.bak3
 
 # Lua source
 hunted.lua
