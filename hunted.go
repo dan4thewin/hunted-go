@@ -253,30 +253,30 @@ type MenuState struct {
 
 // Game state
 type Game struct {
-	State       GameState
-	Playing     bool
-	Won         bool
-	Tick        int
-	Score       int
-	HighScore   int
-	HeartCount  int
-	BombCount   int
-	MineCount   int
-	CamX, CamY  float64
-	ShakeFactor float64
-	Seed        int64
-	Rng         *rand.Rand
-	Debug       int
-	DebugMsg    string
+	State         GameState
+	Playing       bool
+	Won           bool
+	Tick          int
+	Score         int
+	HighScore     int
+	HeartCount    int
+	BombCount     int
+	MineCount     int
+	CamX, CamY    float64
+	ShakeFactor   float64
+	Seed          int64
+	Rng           *rand.Rand
+	Debug         int
+	DebugMsg      string
 	Mode          int
 	ThreatMax     float64
 	ThreatMaxBase float64 // user's chosen base, saved to options
 	Threat        float64
-	ThugCount   int
-	WaifCount   int
-	Respite     int
-	Level       int
-	Populating  bool // suppress individual spawn sounds during bulk populate
+	ThugCount     int
+	WaifCount     int
+	Respite       int
+	Level         int
+	Populating    bool // suppress individual spawn sounds during bulk populate
 
 	// Game objects
 	Objects []*GameObject
@@ -291,21 +291,21 @@ type Game struct {
 	Path [][]int
 
 	// Configuration from config.yaml
-	DefPlayer      *SpriteDef
-	DefWaif        *SpriteDef
-	DefBomb        *SpriteDef
-	DefMine        *SpriteDef
-	DefCrate       *SpriteDef
-	DefJunk        *SpriteDef
-	DefHeart       *SpriteDef
-	Defs           map[string]*SpriteDef // name→def for save/load
-	Thugs          []*SpriteDef
-	StartHearts    int
-	StartBombs     int
-	StartMines     int
-	Assets         AssetsConfig
-	SoundPaths     SoundsConfig
-	GameConfig     // tunable params
+	DefPlayer   *SpriteDef
+	DefWaif     *SpriteDef
+	DefBomb     *SpriteDef
+	DefMine     *SpriteDef
+	DefCrate    *SpriteDef
+	DefJunk     *SpriteDef
+	DefHeart    *SpriteDef
+	Defs        map[string]*SpriteDef // name→def for save/load
+	Thugs       []*SpriteDef
+	StartHearts int
+	StartBombs  int
+	StartMines  int
+	Assets      AssetsConfig
+	SoundPaths  SoundsConfig
+	GameConfig  // tunable params
 
 	Audio      // music and sound effects
 	Render     // graphics resources
@@ -666,16 +666,16 @@ func (g *Game) savePath() string {
 // Field layout mirrors config.yaml sections for readability.
 type SavedOptions struct {
 	Options struct {
-		MusicVolume float32 `yaml:"music_volume"`
-		MusicEnabled bool   `yaml:"music_enabled"`
-		SfxVolume   float32 `yaml:"sfx_volume"`
-		SfxEnabled  bool    `yaml:"sfx_enabled"`
-		Mode        int     `yaml:"mode"`
-		ThreatMax   float64 `yaml:"threat_max"`
-		Debug       int     `yaml:"debug"`
-		HighScore   int     `yaml:"high_score"`
-		SongIndex   int     `yaml:"song_index"`
-		SongRepeat  bool    `yaml:"song_repeat"`
+		MusicVolume  float32 `yaml:"music_volume"`
+		MusicEnabled bool    `yaml:"music_enabled"`
+		SfxVolume    float32 `yaml:"sfx_volume"`
+		SfxEnabled   bool    `yaml:"sfx_enabled"`
+		Mode         int     `yaml:"mode"`
+		ThreatMax    float64 `yaml:"threat_max"`
+		Debug        int     `yaml:"debug"`
+		HighScore    int     `yaml:"high_score"`
+		SongIndex    int     `yaml:"song_index"`
+		SongRepeat   bool    `yaml:"song_repeat"`
 	} `yaml:"options"`
 }
 
