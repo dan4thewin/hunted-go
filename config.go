@@ -85,6 +85,27 @@ func (g *Game) LoadResources() error {
 			Height: TileSize,
 		}
 	}
+	// Expand rects for multi-tile sprites defined in config
+	for _, def := range g.Defs {
+		if def.SprW <= 1 && def.SprH <= 1 {
+			continue
+		}
+		for _, idx := range def.Idle {
+			if idx < 0 {
+				idx = -idx
+			}
+			g.expandSpriteRect(idx, def.SprW, def.SprH)
+		}
+		for _, idx := range def.Poses {
+			if idx < 0 {
+				idx = -idx
+			}
+			g.expandSpriteRect(idx, def.SprW, def.SprH)
+		}
+	}
+	// Title screen decoration sprites (not in config)
+	g.expandSpriteRect(205, 3, 3)
+	g.expandSpriteRect(175, 1, 2)
 
 	// Load invulnerability flash shader
 	g.InvulnShader = rl.LoadShader("", g.Assets.InvulnShader)
@@ -98,6 +119,13 @@ func (g *Game) LoadResources() error {
 	g.Font = rl.LoadFontEx(g.Assets.Font, 80, nil)
 
 	return nil
+}
+
+func (g *Game) expandSpriteRect(idx, w, h int) {
+	if idx >= 0 && idx < len(g.SpriteRects) {
+		g.SpriteRects[idx].Width = float32(w * TileSize)
+		g.SpriteRects[idx].Height = float32(h * TileSize)
+	}
 }
 
 func parseKind(s string) Kind {
@@ -119,6 +147,8 @@ func parseKind(s string) Kind {
 
 func (y *SpriteDefYAML) toSpriteDef(key string) *SpriteDef {
 	name := cond(y.Name != "", y.Name, key)
+	w := cond(y.Width > 0, y.Width, TileSize)
+	h := cond(y.Height > 0, y.Height, TileSize)
 	return &SpriteDef{
 		Name:         name,
 		Idle:         y.Idle,
@@ -129,8 +159,10 @@ func (y *SpriteDefYAML) toSpriteDef(key string) *SpriteDef {
 		Frames2:      y.Frames2,
 		Speed:        y.Speed,
 		Speed2:       y.Speed2,
-		Width:        y.Width,
-		Height:       y.Height,
+		Width:        w,
+		Height:       h,
+		SprW:         (w + TileSize - 1) / TileSize,
+		SprH:         (h + TileSize - 1) / TileSize,
 		XOff:         y.XOff,
 		YOff:         y.YOff,
 		Avoid:        y.Avoid,

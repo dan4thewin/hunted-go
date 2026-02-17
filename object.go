@@ -48,12 +48,6 @@ func (g *Game) Emplace(def *SpriteDef, x, y float64, opts ...func(*GameObject)) 
 	}
 
 	// Set defaults
-	if obj.Width == 0 {
-		obj.Width = 8
-	}
-	if obj.Height == 0 {
-		obj.Height = 8
-	}
 	if obj.YMax == 0 {
 		obj.YMax = YMax
 	}

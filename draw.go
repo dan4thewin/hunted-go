@@ -59,8 +59,8 @@ func (g *Game) Draw() {
 		rl.BeginMode2D(cam)
 		g.DrawTiles()
 		// Oversized sprites at screen-relative positions within the visible area
-		g.DrawSpriteScaled(205, titleMapX+34+24, titleMapY+28-8, 3, 3)
-		g.DrawSpriteScaled(175, titleMapX+62+24, titleMapY+38-8, 1, 2)
+		g.DrawSprite(205, titleMapX+34+24, titleMapY+28-8, false)
+		g.DrawSprite(175, titleMapX+62+24, titleMapY+38-8, false)
 		rl.EndMode2D()
 		// Title text overlay in screen coordinates
 		g.DrawTitle()
@@ -115,23 +115,6 @@ func (g *Game) DrawTiles() {
 			}
 		}
 	}
-}
-
-func (g *Game) DrawSpriteScaled(index int, x, y float32, w, h int) {
-	if index < 0 || index >= len(g.SpriteRects) {
-		return
-	}
-	// Source rect: expand from the sprite's position to cover w x h tiles in the spritesheet
-	src := g.SpriteRects[index]
-	src.Width = float32(w * TileSize)
-	src.Height = float32(h * TileSize)
-	dest := rl.Rectangle{
-		X:      x,
-		Y:      y,
-		Width:  float32(w * TileSize),
-		Height: float32(h * TileSize),
-	}
-	rl.DrawTexturePro(g.Spritesheet, src, dest, rl.Vector2{}, 0, rl.White)
 }
 
 func (g *Game) DrawGame() {
@@ -278,12 +261,7 @@ func (g *Game) DrawSprite(index int, x, y float32, flip bool) {
 	}
 
 	src := g.SpriteRects[index]
-	dest := rl.Rectangle{
-		X:      x,
-		Y:      y,
-		Width:  TileSize,
-		Height: TileSize,
-	}
+	dest := rl.Rectangle{X: x, Y: y, Width: src.Width, Height: src.Height}
 
 	if flip {
 		src.Width = -src.Width
@@ -367,6 +345,9 @@ func (g *Game) DrawUI() {
 	}
 
 	// Distance to finish
+	if g.Player == nil {
+		return
+	}
 	dist := max(0, FinishLine-int(g.Player.X))
 	rl.DrawTextEx(g.Font, strconv.Itoa(dist), rl.Vector2{X: 104 * scale, Y: 0}, fontSize, 1, color)
 	rl.DrawTextEx(g.Font, ">>>", rl.Vector2{X: 117 * scale, Y: 0}, fontSize, 1, color)

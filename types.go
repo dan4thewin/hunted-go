@@ -67,6 +67,8 @@ type SpriteDef struct {
 	Speed2       float64
 	Width        int
 	Height       int
+	SprW         int // sprite width in tiles (derived from Width)
+	SprH         int // sprite height in tiles (derived from Height)
 	XOff         int
 	YOff         int
 	Avoid        bool
