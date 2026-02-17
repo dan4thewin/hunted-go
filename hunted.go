@@ -3041,11 +3041,10 @@ func (g *Game) drawOptionSlider(label string, sx, sy, sw, sh, y, rowH int32,
 	rl.DrawTextEx(g.Font, valueText, rl.Vector2{X: pctX, Y: ly}, fontSize, 2, valueColor)
 }
 
-func (g *Game) drawOptionCheckbox(label string, checked bool, menuX, menuW int32,
+func (g *Game) drawOptionCheckbox(label string, checked bool, cbX float32,
 	y, rowH int32, lx, ly, fontSize, scale float32, labelColor, valueColor rl.Color) float32 {
 	rl.DrawTextEx(g.Font, label, rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
 	cbSize := int32(fontSize * 0.7)
-	cbX := float32(menuX) + float32(menuW)*0.35
 	cbY := float32(y) + float32(rowH-cbSize)/2
 	rl.DrawRectangleLines(int32(cbX), int32(cbY), cbSize, cbSize, valueColor)
 	if checked {
@@ -3099,10 +3098,12 @@ func (g *Game) DrawOptions() {
 				g.MusicVolume, fmt.Sprintf("%d%%", int(g.MusicVolume*100+0.5)),
 				lx, ly, fontSize, scale, labelColor, valueColor)
 		case 1: // Music + Repeat checkboxes
-			repCbX := g.drawOptionCheckbox("Music", g.MusicEnabled, menuX, menuW,
+			alignX := float32(menuX) + float32(menuW)*0.35
+			nextX := g.drawOptionCheckbox("Music", g.MusicEnabled, alignX,
 				y, rowH, lx, ly, fontSize, scale, labelColor, valueColor)
-			g.drawOptionCheckbox("Repeat", g.SongRepeat, int32(repCbX)-menuX, menuW,
-				y, rowH, repCbX, ly, fontSize, scale, valueColor, valueColor)
+			repLabelW := rl.MeasureTextEx(g.Font, "Repeat", fontSize, 2).X
+			g.drawOptionCheckbox("Repeat", g.SongRepeat, nextX+repLabelW+10*scale,
+				y, rowH, nextX, ly, fontSize, scale, valueColor, valueColor)
 		case 2: // Song
 			rl.DrawTextEx(g.Font, "Song", rl.Vector2{X: lx, Y: ly}, fontSize, 2, labelColor)
 			if len(g.Songs) > 0 {
@@ -3120,7 +3121,8 @@ func (g *Game) DrawOptions() {
 				g.SfxVolume, fmt.Sprintf("%d%%", int(g.SfxVolume*100+0.5)),
 				lx, ly, fontSize, scale, labelColor, valueColor)
 		case 4: // SFX toggle
-			g.drawOptionCheckbox("SFX", g.SfxEnabled, menuX, menuW,
+			alignX := float32(menuX) + float32(menuW)*0.35
+			g.drawOptionCheckbox("SFX", g.SfxEnabled, alignX,
 				y, rowH, lx, ly, fontSize, scale, labelColor, valueColor)
 		case 5: // Mode
 			curMode := "Normal"
