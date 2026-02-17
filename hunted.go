@@ -1740,18 +1740,18 @@ func (g *Game) slideAxis(p *GameObject, otherDelta float64, move, fixed, fallbac
 
 func (g *Game) slideWalk(p *GameObject, x, y, lx, ly, nx, ny float64) (float64, float64, bool, bool) {
 	if y != 0 {
-		ny, slid, result := g.slideAxis(p, x, ny, lx, ly, &lx, &ny, DirRight, DirLeft)
+		adjY, slid, result := g.slideAxis(p, x, ny, lx, ly, &lx, &ny, DirRight, DirLeft)
 		if slid {
-			return nx, ny, true, result
+			return nx, adjY, true, result
 		}
-		_ = ny
+		ny = adjY
 	}
 	if x != 0 {
-		nx, slid, result := g.slideAxis(p, y, nx, ly, lx, &nx, &ly, DirDown, DirUp)
+		adjX, slid, result := g.slideAxis(p, y, nx, ly, lx, &nx, &ly, DirDown, DirUp)
 		if slid {
-			return nx, ny, true, result
+			return adjX, ny, true, result
 		}
-		_ = nx
+		nx = adjX
 	}
 	return nx, ny, false, false
 }
