@@ -198,40 +198,39 @@ func (g *Game) bounceDir(p *GameObject, dir int, lx, ly, nx, ny float64) int {
 	return lr | ud
 }
 
-func (g *Game) slideAxis(p *GameObject, otherDelta float64, move, fixed, fallback float64,
-	obstA, obstB *float64, posDir, negDir int) (float64, bool, bool) {
-	if !g.Obstacle(p, 0, 0, obstA, obstB) {
-		return move, false, false
-	}
-	if otherDelta == 0 {
-		testPos := fixed + 3
-		if !g.Obstacle(p, 0, 0, &testPos, obstB) {
-			return move, true, g.walk(p, posDir, true)
+// slideWalk handles corner-rounding: when a pure cardinal move is blocked
+// by a wall, it probes ±3 pixels on the perpendicular axis for a gap and,
+// if found, walks sideways to slip around the corner.  This gives forgiving
+// movement near doorways and tile-width passages.
+//
+// Only fires for pure cardinal movement (one of dx/dy is zero).  Diagonal
+// movement is handled by the caller via per-axis obstacle reversion.
+func (g *Game) slideWalk(p *GameObject, dx, dy, lx, ly, nx, ny float64) (bool, bool) {
+	// ── Vertical movement blocked → try sliding left or right ──
+	if dy != 0 && dx == 0 && g.Obstacle(p, 0, 0, &lx, &ny) {
+		probeX := lx + 3
+		if !g.Obstacle(p, 0, 0, &probeX, &ny) {
+			return true, g.walk(p, DirRight, true)
 		}
-		testNeg := fixed - 3
-		if !g.Obstacle(p, 0, 0, &testNeg, obstB) {
-			return move, true, g.walk(p, negDir, true)
+		probeX = lx - 3
+		if !g.Obstacle(p, 0, 0, &probeX, &ny) {
+			return true, g.walk(p, DirLeft, true)
 		}
 	}
-	return fallback, false, false
-}
 
-func (g *Game) slideWalk(p *GameObject, x, y, lx, ly, nx, ny float64) (float64, float64, bool, bool) {
-	if y != 0 {
-		adjY, slid, result := g.slideAxis(p, x, ny, lx, ly, &lx, &ny, DirRight, DirLeft)
-		if slid {
-			return nx, adjY, true, result
+	// ── Horizontal movement blocked → try sliding up or down ──
+	if dx != 0 && dy == 0 && g.Obstacle(p, 0, 0, &nx, &ly) {
+		probeY := ly + 3
+		if !g.Obstacle(p, 0, 0, &nx, &probeY) {
+			return true, g.walk(p, DirDown, true)
 		}
-		ny = adjY
-	}
-	if x != 0 {
-		adjX, slid, result := g.slideAxis(p, y, nx, ly, lx, &nx, &ly, DirDown, DirUp)
-		if slid {
-			return adjX, ny, true, result
+		probeY = ly - 3
+		if !g.Obstacle(p, 0, 0, &nx, &probeY) {
+			return true, g.walk(p, DirUp, true)
 		}
-		nx = adjX
 	}
-	return nx, ny, false, false
+
+	return false, false
 }
 
 func (g *Game) walk(p *GameObject, dir int, slide bool) bool {
@@ -257,10 +256,16 @@ func (g *Game) walk(p *GameObject, dir int, slide bool) bool {
 		}
 
 		if !slide {
-			var slid, result bool
-			nx, ny, slid, result = g.slideWalk(p, x, y, lx, ly, nx, ny)
-			if slid {
+			if slid, result := g.slideWalk(p, x, y, lx, ly, nx, ny); slid {
 				return result
+			}
+			// Revert each blocked axis independently.  For diagonal
+			// movement this lets the object slide along the clear axis.
+			if y != 0 && g.Obstacle(p, 0, 0, &lx, &ny) {
+				ny = ly
+			}
+			if x != 0 && g.Obstacle(p, 0, 0, &nx, &ly) {
+				nx = lx
 			}
 		}
 
