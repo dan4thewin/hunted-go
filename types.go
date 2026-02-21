@@ -16,6 +16,11 @@ const (
 	VisibleTiles = 16                      // Number of tiles visible in each dimension
 	VisibleSize  = VisibleTiles * TileSize // 128 pixels
 	MaxN         = 32767
+	PathCols     = 32 // BFS path grid width in tiles
+	PathRows     = 20 // BFS path grid height in tiles
+	MaxCrumbs    = 11 // max breadcrumbs before reaping oldest
+	WallCost     = 99 // BFS cost assigned to wall cells
+	CrumbMinDist = 20 // min squared distance between crumbs
 	ScrollWidth  = 112
 	FinalScreen  = 896
 	FinishLine   = 992

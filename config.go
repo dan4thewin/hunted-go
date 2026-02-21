@@ -17,11 +17,11 @@ func NewGame() *Game {
 		Mode:      1,
 		Debug:     0,
 		CamY:      16,
-		Path:      make([][]int, 32),
+		Path:      make([][]int, PathCols),
 		MenuState: MenuState{FirstLaunch: true},
 	}
 	for i := range g.Path {
-		g.Path[i] = make([]int, 20)
+		g.Path[i] = make([]int, PathRows)
 	}
 	return g
 }
