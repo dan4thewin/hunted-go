@@ -23,6 +23,13 @@ large rewrites.
   and `gofmt -l .` to check for issues. Verify after every change
   batch.
 
+- **Test:** `go test -gcflags=all=-l -count=1 ./...` (inlining
+  disabled for gomonkey). Check statement coverage with
+  `go test -gcflags=all=-l -coverprofile=cover.out ./...` then
+  `go tool cover -func=cover.out`. Check condition coverage with
+  `gobco -list-all -test=-gcflags=all=-l .` — look for
+  "but never true/false" gaps.
+
 - **Complexity:** Use `gocyclo -top N hunted.go` for analysis.
   Threshold is 2× average CC. Flat switches (each case is a single
   call/assignment) are acceptable above threshold.
@@ -34,9 +41,11 @@ large rewrites.
   nil-guarded calls or bounds-guarded indexing.
 
 - **DRY helpers:** Prefer one parameterized helper over N
-  near-identical variants. If two helpers share >50% of body,
-  generalize with parameters. Helpers should target CC ≤ half the
-  project average.
+  near-identical variants, but balance DRY with clarity — too many
+  parameters (especially abstract pointer-swapping or axis-generic
+  arguments) hurts readability. When a helper needs >5 parameters
+  to stay generic, consider inlining with explicit per-case code.
+  Helpers should target CC ≤ half the project average.
 
 - **Behavior dispatch uses two patterns.** Function pointers
   (Controller, PostMove, PreAct, FrameFunc) for substantial logic
@@ -46,6 +55,39 @@ large rewrites.
   (Crunch scoring, Reap, MobCollide).
 
 - **No backup files** in the repo.
+
+## Unit testing
+
+- **Clarity over DRY in tests.** Each test should be self-contained
+  and obvious. Copious comments explain what is being tested, why,
+  and how it maps to game behavior. Prefer readability over
+  eliminating duplication.
+
+- **Coverage targets.** Aim for 100% statement coverage (`go tool
+  cover`) and 100% condition coverage (`gobco`). When adding or
+  modifying production code, update tests to maintain both.
+
+- **Test without raylib.** Keep `SoundsLoaded=false` in test Game
+  structs so PlaySfx/PlayExplosion skip raylib audio calls. Seed
+  `g.Rng` when functions use randomness (OpenCrate, MakeSparks).
+
+- **Mock external dependencies with gomonkey/v2.** For functions
+  that call methods outside the file under test (e.g. MobCollide →
+  OpenCrate, Crunch, Explode), mock them with
+  `gomonkey.ApplyMethodFunc` to test the caller's branching in
+  isolation. This eliminates setup for downstream state (testDeadDef,
+  HeartCount, Threat, etc.) and makes tests immune to changes in
+  the mocked functions' internals. Tests must run with
+  `-gcflags=all=-l` (disable inlining).
+
+- **Minimal test helpers.** `newTestGame()` builds a Game with
+  seeded RNG and wall tile config. `newObj(x, y)` builds an 8×8
+  GameObject. Use raw `&Game{}` or `&GameObject{}` when only a few
+  fields matter (especially with mocks).
+
+- **Test naming.** Subtests use descriptive CamelCase names that
+  describe the scenario (e.g. `FriendlyOpensCrate`,
+  `BothBlockedNoSlide`, `DiagonalSkipped`).
 
 ## Architecture notes
 
